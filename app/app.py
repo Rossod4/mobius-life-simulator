@@ -376,19 +376,38 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
     if not all(n in PORTFOLIOS for n in names):
         return
 
-    st.subheader("Four Seasons vs Better, by asset class")
+    st.subheader("Asset-class comparison: Aspen Four Seasons vs Mobius Better")
     st.caption(
-        "Four Seasons' and Better's own holdings use different naming schemes for similar underlying "
-        "exposure (e.g. Four Seasons' 'Global Equities' vs Better's 'Eq Gbl DM Novum Mgd Vol' / 'Eq "
-        "Gbl DM Quality Gross'), so this groups both onto the same shared buckets first - allocation, "
-        "then the funds behind each bucket, then how each bucket's own market exposure has moved "
-        "historically, before the actual pot outcome further down."
+        "Aspen Four Seasons and Mobius Better classify their holdings under different naming "
+        "conventions despite representing similar underlying exposures (for example, Four Seasons' "
+        "'Global Equities' corresponds to Better's 'Eq Gbl DM Novum Mgd Vol' and 'Eq Gbl DM Quality "
+        "Gross'). Both portfolios are therefore mapped onto a common set of asset-class buckets, "
+        "enabling a direct comparison of allocation, underlying holdings, and historical performance "
+        "by asset class."
     )
 
     group_weights = {name: comparison_group_weights(name) for name in names}
     all_groups = sorted(set().union(*(w.index for w in group_weights.values())))
 
-    st.markdown("**Which funds make up each bucket**")
+    st.markdown("**Allocation by asset class**")
+    fig_alloc = go.Figure()
+    for name in names:
+        w = group_weights[name].reindex(all_groups, fill_value=0.0)
+        fig_alloc.add_trace(go.Bar(x=all_groups, y=w.values * 100, name=display_name(name),
+                                    marker_color=portfolio_color(name)))
+    fig_alloc.update_layout(
+        barmode="group", yaxis_title="Weight (%)", height=380,
+        margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=-0.25),
+    )
+    st.plotly_chart(fig_alloc, use_container_width=True)
+    if any(w.get("Alternatives (hedge funds)", 0.0) > 0 for w in group_weights.values()):
+        st.caption(
+            "The 'Alternatives (hedge funds)' bucket has no equivalent holding in the portfolio that "
+            "does not hold it, and is therefore shown as 0% rather than being allocated to an "
+            "unrelated bucket such as Commodities, which would misrepresent both portfolios."
+        )
+
+    st.markdown("**Underlying fund holdings by asset class**")
     for grp in all_groups:
         rows = []
         for name in names:
@@ -408,12 +427,14 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
             )
 
     st.divider()
-    st.subheader("How each asset class has evolved on its own")
+    st.subheader("Historical performance by asset class")
     st.caption(
-        "Growth of £100, unweighted, no fees. Each portfolio's own buckets, shown independently of "
-        "one another - this is the underlying market exposure only, not a simulated outcome. Where a "
-        "bucket blends several of a portfolio's own holdings (e.g. Better's Global Bonds), this is "
-        "that blend at its own internal weights, rescaled to 100%."
+        "The charts below show the growth of £100 invested in each asset-class bucket independently, "
+        "based on unweighted, fee-free historical returns. This reflects underlying market "
+        "performance only, and does not represent a simulated portfolio outcome. Where a bucket "
+        "comprises multiple holdings within a portfolio (for example, Better's Global Bonds), the "
+        "return shown reflects that portfolio's own internal weighting across those holdings, "
+        "rescaled to 100%."
     )
     cols = st.columns(2)
     for col, name in zip(cols, names):
@@ -434,14 +455,13 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
             st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
-    st.subheader("How that split would have built up an example £500,000 pot")
+    st.subheader("Illustrative pot growth by asset-class allocation")
     st.caption(
-        "Buy-and-hold illustration: starts each bucket at its actual portfolio weight of a £500,000 "
-        "pot and grows each slice on its own market return, with NO further rebalancing and NO "
-        "withdrawals - isolates how the mix alone would have drifted and grown. The actual "
-        "withdrawal-adjusted, fee-adjusted simulation (which assumes the blend is rebalanced back to "
-        "target weights each month, per weighted_monthly_returns) is shown separately further down "
-        "this page."
+        "This illustration allocates an example £500,000 pot across each asset-class bucket at its "
+        "actual portfolio weighting, then grows each allocation according to its own historical "
+        "return, assuming no further rebalancing and no withdrawals. It isolates the effect of the "
+        "asset mix alone. The actual withdrawal-adjusted and fee-adjusted simulation, which assumes "
+        "monthly rebalancing to target weights, is presented separately later in this section."
     )
     example_pot = 500_000.0
     cols2 = st.columns(2)
