@@ -7,6 +7,8 @@ Eq EM Net,EM Equities
 Global Equities,Global Equities
 Eq Gbl DM Novum Mgd Vol,Global Equities
 Eq Gbl DM Quality Gross,Global Equities
+Eq Gbl DM Value Gross,Global Equities
+Eq Gbl DM Min vol Gross,Global Equities
 Global Bonds,Global Bonds
 Global Agg Bonds,Global Bonds
 EM Corp Bond,Global Bonds
