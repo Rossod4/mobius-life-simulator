@@ -309,8 +309,12 @@ def render_comparison_section(title, caption, names, sim_results, hist_profile_k
                           help="Compound annual growth rate, from this portfolio's own historical monthly returns net of fees.")
                 st.metric("Volatility", f"{vol*100:.2f}% pa",
                           help="Annualised standard deviation of monthly returns - how bumpy the ride is.")
-                st.metric("Cumulative performance", f"{cum_pct:+.1f}%",
-                          help="Total growth of the starting pot over the full historical horizon shown in the chart below.")
+                st.metric("Cumulative pot performance", f"{cum_pct:+.1f}%",
+                          help="Total change in the POT'S OWN VALUE (not just investment growth) over the full "
+                               "historical horizon shown in the chart below - for Decumulation this nets "
+                               "investment growth against withdrawals actually taken out, which is why it can "
+                               "differ sharply from Annualised performance above (that figure is investment "
+                               "return only, with no withdrawals involved).")
                 if show_pot_only_irr:
                     irr_pot = compute_irr(hist_df, spend_column="Withdrawal")
                     st.metric("Pot-only IRR", f"{irr_pot*100:.2f}% pa" if not np.isnan(irr_pot) else "n/a",
@@ -581,7 +585,7 @@ def _pdf_section_table(pdf, section_title, names, sim_results, profile_kwargs, a
     # page width) - the two extra Decumulation columns (19+14=33mm) are added on top, not carved
     # out of the others, so the Accumulation table's column widths never change.
     col_widths = [38, 24, 17, 18, 16, 14, 30]
-    headers = ["Portfolio", "Annualised perf.", "Volatility", "Cumulative", "IRR", "Fee", "Data period"]
+    headers = ["Portfolio", "Annualised perf.", "Volatility", "Cum. pot %", "IRR", "Fee", "Data period"]
     if show_ruin:
         col_widths.insert(3, 19)
         headers.insert(3, "Prob. of ruin")
@@ -1345,7 +1349,7 @@ if show_accum:
             accum_title,
             "No withdrawals: growing the pot from today until the horizon ends. Probability of ruin isn't "
             "shown here since it's always ~0% with nothing being withdrawn and not a meaningful comparison "
-            "point - volatility, annualised performance and cumulative performance are the metrics that "
+            "point - volatility, annualised performance and cumulative pot performance are the metrics that "
             "matter for this comparison.",
             accum_chosen, accum_results, accum_profile_kwargs, asset_df, cpi,
             show_ruin=False,
@@ -1549,7 +1553,7 @@ if show_decum:
             f"Decumulation — {' vs '.join(display_name(n) for n in ordered_names(results))}",
             "With withdrawals: the client spends from this pot every year, so probability of ruin is the "
             "headline risk metric here, alongside volatility, annualised performance and cumulative "
-            "performance.",
+            "pot performance.",
             ordered_names(results), results, profile_kwargs, asset_df, cpi,
             show_pot_only_irr=True,
         )
