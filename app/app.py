@@ -11,6 +11,7 @@ Better), switch sampling method, and toggle spending guardrails on/off, to see t
 probability of ruin, spending shortfall and legacy.
 """
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -72,6 +73,22 @@ def _cached_run_simulation(name, asset_df, cpi, profile, method, n_sims, block_m
 # stable as portfolios are added.
 MOBIUS_PALETTE = ["#1baf7a", "#eda100", "#3b7dd8", "#a855c9", "#d8546b"]
 COMPETITOR_PALETTE = ["#6b6f76", "#494d54", "#9a9ea5", "#2f3237", "#c7cad0"]
+
+# Named sequence-of-returns stress scenarios: each sets the historical window's START to a
+# well-known crisis point, so every chart/statistic on the page (Monte Carlo bootstrap AND the
+# historical single-path replay) is tested as if that crisis were the start of the client's plan -
+# the standard way decumulation risk is actually communicated (sequencing risk), rather than left
+# implicit inside an aggregate probability-of-ruin figure. Dates are the approximate START of each
+# crisis (not its trough), since the point is testing "what if this happened at retirement", not
+# picking the worst possible entry point in hindsight. A portfolio whose own holdings don't cover
+# this far back (e.g. Better's data begins 2001) simply uses whatever of its own data falls within
+# the window - same behaviour as the manual slider below, already disclosed in its help text.
+STRESS_SCENARIOS = {
+    "Full history (default)": None,
+    "Dot-com crash (from Mar 2000)": date(2000, 3, 1),
+    "Global Financial Crisis (from Oct 2007)": date(2007, 10, 1),
+    "2022 inflation shock (from Jan 2022)": date(2022, 1, 1),
+}
 
 
 def display_name(name: str) -> str:
@@ -945,20 +962,43 @@ with st.sidebar:
         st.header("Historical data window")
         _data_min = asset_df.index.min().date()
         _data_max = asset_df.index.max().date()
-        window_start, window_end = st.slider(
-            "Restrict every chart and statistic to this period",
-            min_value=_data_min, max_value=_data_max, value=(_data_min, _data_max),
-            help="Narrows ALL charts and statistics on this page to only this historical window - "
-                 "e.g. drag the left edge in to test the last 10 years instead of the full history, "
-                 "the way you'd test whether a conclusion still holds on more recent data. Each "
-                 "portfolio still only uses whatever of ITS OWN holdings' data falls within this "
-                 "window - narrowing it doesn't invent data a portfolio doesn't have.",
+
+        stress_scenario = st.selectbox(
+            "Stress-test starting point",
+            list(STRESS_SCENARIOS.keys()),
+            help="Tests every chart and statistic on this page as if the client's plan started at a "
+                 "well-known market crisis, instead of averaging over all of history - this is what "
+                 "'sequence of returns' risk actually looks like: the SAME long-run average return can "
+                 "produce a very different outcome depending on whether the bad years land at the "
+                 "start of retirement or the end. Overrides the manual window below while active.",
         )
-        if window_start > _data_min or window_end < _data_max:
+        _scenario_start = STRESS_SCENARIOS[stress_scenario]
+
+        if _scenario_start is not None:
+            window_start = max(_scenario_start, _data_min)
+            window_end = _data_max
             _years_shown = (window_end - window_start).days / 365.25
-            st.caption(f"Using {window_start} to {window_end} (~{_years_shown:.0f} years) instead of "
-                       "the full available history. Very short windows make Monte Carlo results "
-                       "noisier - a handful of years isn't much to bootstrap from.")
+            st.caption(
+                f"Showing {window_start} to {window_end} (~{_years_shown:.0f} years) - every portfolio "
+                "is tested as though this crisis marked the start of the plan. A portfolio whose own "
+                "holdings' data begins later than this date simply starts from its own earliest "
+                "available point instead."
+            )
+        else:
+            window_start, window_end = st.slider(
+                "Restrict every chart and statistic to this period",
+                min_value=_data_min, max_value=_data_max, value=(_data_min, _data_max),
+                help="Narrows ALL charts and statistics on this page to only this historical window - "
+                     "e.g. drag the left edge in to test the last 10 years instead of the full history, "
+                     "the way you'd test whether a conclusion still holds on more recent data. Each "
+                     "portfolio still only uses whatever of ITS OWN holdings' data falls within this "
+                     "window - narrowing it doesn't invent data a portfolio doesn't have.",
+            )
+            if window_start > _data_min or window_end < _data_max:
+                _years_shown = (window_end - window_start).days / 365.25
+                st.caption(f"Using {window_start} to {window_end} (~{_years_shown:.0f} years) instead of "
+                           "the full available history. Very short windows make Monte Carlo results "
+                           "noisier - a handful of years isn't much to bootstrap from.")
         # NOTE: the actual asset_df filtering happens AFTER the sidebar block closes (not here) -
         # tab_data below can add new asset-class columns via an outer join, which would silently
         # re-widen the date range again if we filtered before that ran. Filtering once, last,
