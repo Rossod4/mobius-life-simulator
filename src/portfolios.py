@@ -132,6 +132,10 @@ EQUITY_CLASSES = {
     # Mobius Better labels its equity sleeve under its own strategy names rather than
     # the generic "Global Equities"/"EM Equities" used by the Aspen portfolios.
     "Eq Gbl DM Novum Mgd Vol", "Eq Gbl DM Quality Gross", "Eq EM Net",
+    # Four Seasons' own factor-equity funds (Dimensional Global Value, UBS Min Vol), mapped to
+    # their own matching MSCI factor series rather than generic Global Equities - still equity
+    # holdings, so still belong in the equity sleeve for equity/non-equity rescaling.
+    "Eq Gbl DM Value Gross", "Eq Gbl DM Min vol Gross",
 }
 
 
