@@ -1303,19 +1303,14 @@ with st.sidebar:
             _cma_uncovered = sorted(_cma_selected_classes - set(cma_mod.CMA_ANNUAL.keys()))
             if _cma_uncovered:
                 st.caption(
-                    f"Most asset classes' average returns are being pulled **{cma_blend_pct}% of the way** "
-                    "from their historical average towards their forward-looking forecast (source: "
-                    "Monevator's compilation of published 10-year forecasts) - **except** "
-                    f"{', '.join(_cma_uncovered)}, which have no published forward-looking forecast and "
-                    "stay at their historical average regardless of this slider. See 'What the forward-"
-                    "looking blend means' below for the full picture."
+                    f"Pulling most selected asset classes **{cma_blend_pct}%** toward forward-looking "
+                    f"forecasts - **except** {', '.join(_cma_uncovered)}, which have no published "
+                    "forecast and stay at their historical average."
                 )
             else:
                 st.caption(
-                    f"Every asset class held by your selected portfolios is being pulled "
-                    f"**{cma_blend_pct}% of the way** from its historical average towards its forward-"
-                    "looking forecast (source: Monevator's compilation of published 10-year forecasts). "
-                    "See 'What the forward-looking blend means' below for the numbers."
+                    f"Pulling every selected asset class **{cma_blend_pct}%** toward forward-looking "
+                    "forecasts."
                 )
 
         st.header("How long might the client actually live?")
@@ -1418,10 +1413,6 @@ if _common_window is not None:
 # correlation/shape untouched (see src/cma.py). Applied ONCE here, before any simulation function
 # is called, so every chart and statistic in the app below is automatically consistent - no other
 # engine changes are needed since every simulation function takes asset_df as a plain parameter.
-# Computed unconditionally (cheap - just historical vs forecast means) so the explanatory table
-# below can always show what the slider WOULD do, even sitting at its 0% default - not just after
-# someone's already moved it away from pure history.
-cma_shift_table = cma_mod.cma_shifts(asset_df, AC)
 if cma_blend > 0:
     asset_df = cma_mod.apply_cma_blend(asset_df, AC, cma_blend)
 
@@ -1605,77 +1596,12 @@ if apply_tax and show_decum:
         "(inflating, guardrail-adjusted) spending target, for every simulated market path."
     )
 
-st.subheader("What the forward-looking blend means for this plan")
 if cma_blend > 0:
-    _cma_ruin_line = (
-        "Expect the probability of ruin below to be somewhat HIGHER than at the 0% setting - that's "
-        "the blend doing its job, not a bug: it's a fairer, less rose-tinted test of the plan."
-        if show_decum else
-        "Expect the growth figures above to be somewhat LOWER than at the 0% setting - that's the "
-        "blend doing its job, not a bug: it's a fairer, less rose-tinted test of the plan."
+    st.caption(
+        f"Returns are blended **{cma_blend_pct}%** of the way from historical average towards "
+        "forward-looking analyst forecasts (growth assets pulled down, some bonds pulled up) - see "
+        "the Advanced tab to adjust."
     )
-    st.info(
-        f"**In short: this plan is now being tested against more cautious return assumptions, not "
-        f"just the strong 2000-2026 stretch.** All the results {'below' if show_decum else 'above'} use "
-        f"returns pulled **{cma_blend_pct}%** of the way from actual history towards current analyst "
-        "forecasts for the next 10 years. Growth assets like equities and REITs are generally pulled "
-        "DOWN (forecasters expect more modest returns than that strong historical run), while some "
-        f"bonds are pulled UP. {_cma_ruin_line}"
-    )
-else:
-    st.info(
-        "**Currently at 0%: every result on this page uses pure historical returns (2000-2026), with "
-        "no forward-looking adjustment at all.** The table below shows what would change if you moved "
-        "the 'Lean on future forecasts' slider in the Advanced tab - for each asset class, its "
-        "historical average, the independent analyst forecast for the next 10 years, and what the "
-        "blended figure would be at the slider's current setting (right now, identical to history, "
-        "since blended = historical at 0%)."
-    )
-hist_annual, blended_annual, forecast_annual = {}, {}, {}
-for label, col in AC.items():
-    if label not in cma_mod.CMA_ANNUAL or col not in asset_df.columns:
-        continue
-    shift_full = cma_shift_table[label]
-    current_monthly_mean = asset_df[col].dropna().mean()  # already blended by cma_blend
-    hist_monthly_mean = current_monthly_mean - cma_blend * shift_full
-    hist_annual[label] = (1 + hist_monthly_mean) ** 12 - 1
-    # exact figure actually driving the simulation below (not re-derived/approximated)
-    blended_annual[label] = (1 + current_monthly_mean) ** 12 - 1
-    forecast_annual[label] = cma_mod.CMA_ANNUAL[label]
-
-# Any asset class actually held by a selected portfolio but with NO published forecast is shown
-# explicitly (historical average only, forecast/blended left blank) rather than silently omitted -
-# so it's visible that this slider does nothing for that holding, instead of looking covered.
-_selected_classes = set()
-for _n in list(accum_chosen) + list(chosen if show_decum else []):
-    _selected_classes |= set(asset_class_weights(_n).index)
-for label in sorted(_selected_classes - set(cma_mod.CMA_ANNUAL.keys())):
-    col = AC.get(label)
-    if col is None or col not in asset_df.columns:
-        continue
-    hist_annual[label] = (1 + asset_df[col].dropna().mean()) ** 12 - 1
-    blended_annual[label] = hist_annual[label]  # unaffected by the slider - no forecast to blend towards
-    forecast_annual[label] = float("nan")
-
-cma_table = pd.DataFrame({
-    "Historical average (2000-2026), pa": hist_annual,
-    "Forward-looking forecast (10yr), pa": forecast_annual,
-    f"Blended at {cma_blend_pct}%, pa": blended_annual,
-})
-cma_table.index = [
-    i + (" *" if i in cma_mod.PROXIED_ASSET_CLASSES else "")
-    + (" †" if i not in cma_mod.CMA_ANNUAL else "")
-    for i in cma_table.index
-]
-st.dataframe(cma_table.style.format("{:.1%}", na_rep="no forecast"), use_container_width=True)
-st.caption(
-    "† No published forward-looking forecast exists for this asset class at all - it stays at its "
-    "historical average regardless of the slider (shown here for transparency, not silently hidden). "
-    "* No published forward-looking forecast exists for this exact sub-category - proxied with "
-    "the closest published category (see src/cma.py for which, and why). Source: Monevator's "
-    "compilation of published 10-year GBP nominal return forecasts (Vanguard, Schroders, "
-    "JPMorgan, BlackRock and others), https://monevator.com/investment-return-forecasts/."
-)
 
 if show_decum:
     if results:
