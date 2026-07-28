@@ -388,7 +388,7 @@ def render_comparison_section(title, caption, names, sim_results, hist_profile_k
 
 
 def render_fee_sensitivity_section(names, asset_df, cpi, profile_kwargs, method, n_sims, block_mean,
-                                    seed) -> None:
+                                    seed, reset_nonce=0) -> None:
     """Live 'what if the fee were X' exploration - one slider per portfolio, independent of the
     others, re-running the simulation at that fee (holding the portfolio's own real holdings/weights
     fixed) so probability of ruin and the other headline figures respond immediately. Sits alongside
@@ -411,7 +411,7 @@ def render_fee_sensitivity_section(names, asset_df, cpi, profile_kwargs, method,
             current_bps = weighted_avg_fee(name) * 10_000
             fee_bps = st.slider(
                 f"{display_name(name)} fee (bps)", min_value=0, max_value=150,
-                value=int(round(current_bps)), step=1, key=f"fee_slider_{name}",
+                value=int(round(current_bps)), step=1, key=f"fee_slider_{name}_{reset_nonce}",
                 help=f"Actual weighted-average OCF is currently {current_bps:.1f} bps.",
             )
             fee_frac = fee_bps / 10_000
@@ -1030,7 +1030,7 @@ asset_df = _cached_load_asset_returns(_asset_returns_mtime)
 cpi = load_cpi(asset_df)
 
 with st.sidebar:
-    tab_client, tab_data, tab_advanced = st.tabs(["Client", "Edit data", "Advanced"])
+    tab_client, tab_live, tab_data, tab_advanced = st.tabs(["Client", "Live", "Edit data", "Advanced"])
     with tab_client:
         st.header("Client")
         age = st.number_input("Starting age", 40, 90, 65,
@@ -1051,51 +1051,6 @@ with st.sidebar:
                        "around 3.5-4%, but the right number depends heavily on the portfolio, guardrails, "
                        "tax/State Pension and how long the money needs to last - that's what the rest of "
                        "this tool is for.")
-
-        st.header("Historical data window")
-        _data_min = asset_df.index.min().date()
-        _data_max = asset_df.index.max().date()
-
-        stress_scenario = st.selectbox(
-            "Stress-test starting point",
-            list(STRESS_SCENARIOS.keys()),
-            help="Tests every chart and statistic on this page as if the client's plan started at a "
-                 "well-known market crisis, instead of averaging over all of history - this is what "
-                 "'sequence of returns' risk actually looks like: the SAME long-run average return can "
-                 "produce a very different outcome depending on whether the bad years land at the "
-                 "start of retirement or the end. Overrides the manual window below while active.",
-        )
-        _scenario_start = STRESS_SCENARIOS[stress_scenario]
-
-        if _scenario_start is not None:
-            window_start = max(_scenario_start, _data_min)
-            window_end = _data_max
-            _years_shown = (window_end - window_start).days / 365.25
-            st.caption(
-                f"Showing {window_start} to {window_end} (~{_years_shown:.0f} years) - every portfolio "
-                "is tested as though this crisis marked the start of the plan. A portfolio whose own "
-                "holdings' data begins later than this date simply starts from its own earliest "
-                "available point instead."
-            )
-        else:
-            window_start, window_end = st.slider(
-                "Restrict every chart and statistic to this period",
-                min_value=_data_min, max_value=_data_max, value=(_data_min, _data_max),
-                help="Narrows ALL charts and statistics on this page to only this historical window - "
-                     "e.g. drag the left edge in to test the last 10 years instead of the full history, "
-                     "the way you'd test whether a conclusion still holds on more recent data. Each "
-                     "portfolio still only uses whatever of ITS OWN holdings' data falls within this "
-                     "window - narrowing it doesn't invent data a portfolio doesn't have.",
-            )
-            if window_start > _data_min or window_end < _data_max:
-                _years_shown = (window_end - window_start).days / 365.25
-                st.caption(f"Using {window_start} to {window_end} (~{_years_shown:.0f} years) instead of "
-                           "the full available history. Very short windows make Monte Carlo results "
-                           "noisier - a handful of years isn't much to bootstrap from.")
-        # NOTE: the actual asset_df filtering happens AFTER the sidebar block closes (not here) -
-        # tab_data below can add new asset-class columns via an outer join, which would silently
-        # re-widen the date range again if we filtered before that ran. Filtering once, last,
-        # after any upload has already happened, keeps the slider's bounds authoritative.
 
         st.header("What to show")
         view_mode = st.radio(
@@ -1133,6 +1088,98 @@ with st.sidebar:
         else:
             chosen = []
             st.caption("Not shown — set 'What to show' above to Decumulation or Both.")
+
+    with tab_live:
+        st.caption(
+            "Everything on this tab is meant to be toggled live in front of a client - stress "
+            "scenarios, the forward-looking blend, and each portfolio's fee. Nothing here touches "
+            "the underlying holdings/fund data."
+        )
+        if "reset_nonce" not in st.session_state:
+            st.session_state["reset_nonce"] = 0
+        if st.button("↺ Reset to defaults", help="Clears every live-demo control below back to its "
+                                                  "starting value - stress scenario, forward-looking "
+                                                  "blend, and both fee sliders."):
+            st.session_state["reset_nonce"] += 1
+            st.rerun()
+        _nonce = st.session_state["reset_nonce"]
+
+        st.header("Historical data window")
+        _data_min = asset_df.index.min().date()
+        _data_max = asset_df.index.max().date()
+
+        stress_scenario = st.selectbox(
+            "Stress-test starting point",
+            list(STRESS_SCENARIOS.keys()),
+            key=f"stress_scenario_{_nonce}",
+            help="Tests every chart and statistic on this page as if the client's plan started at a "
+                 "well-known market crisis, instead of averaging over all of history - this is what "
+                 "'sequence of returns' risk actually looks like: the SAME long-run average return can "
+                 "produce a very different outcome depending on whether the bad years land at the "
+                 "start of retirement or the end. Overrides the manual window below while active.",
+        )
+        _scenario_start = STRESS_SCENARIOS[stress_scenario]
+
+        if _scenario_start is not None:
+            window_start = max(_scenario_start, _data_min)
+            window_end = _data_max
+            _years_shown = (window_end - window_start).days / 365.25
+            st.caption(
+                f"Showing {window_start} to {window_end} (~{_years_shown:.0f} years) - every portfolio "
+                "is tested as though this crisis marked the start of the plan. A portfolio whose own "
+                "holdings' data begins later than this date simply starts from its own earliest "
+                "available point instead."
+            )
+        else:
+            window_start, window_end = st.slider(
+                "Restrict every chart and statistic to this period",
+                min_value=_data_min, max_value=_data_max, value=(_data_min, _data_max),
+                key=f"hist_window_slider_{_nonce}",
+                help="Narrows ALL charts and statistics on this page to only this historical window - "
+                     "e.g. drag the left edge in to test the last 10 years instead of the full history, "
+                     "the way you'd test whether a conclusion still holds on more recent data. Each "
+                     "portfolio still only uses whatever of ITS OWN holdings' data falls within this "
+                     "window - narrowing it doesn't invent data a portfolio doesn't have.",
+            )
+            if window_start > _data_min or window_end < _data_max:
+                _years_shown = (window_end - window_start).days / 365.25
+                st.caption(f"Using {window_start} to {window_end} (~{_years_shown:.0f} years) instead of "
+                           "the full available history. Very short windows make Monte Carlo results "
+                           "noisier - a handful of years isn't much to bootstrap from.")
+        # NOTE: the actual asset_df filtering happens AFTER the sidebar block closes (not here) -
+        # tab_data below can add new asset-class columns via an outer join, which would silently
+        # re-widen the date range again if we filtered before that ran. Filtering once, last,
+        # after any upload has already happened, keeps the slider's bounds authoritative.
+
+        st.header("How optimistic should the assumptions be?")
+        cma_blend_pct = st.slider(
+            "Lean on future forecasts, not just the past (0% = pure history, 100% = pure forecast)",
+            0, 100, 0, step=5, format="%d%%",
+            key=f"cma_blend_slider_{_nonce}",
+            help="In short: by default (0%), the tool assumes the future looks like 2000-2026, which was "
+                 "a strong run for stock markets. Moving this slider makes the tool assume somewhat lower "
+                 "average returns instead, in line with what professional forecasters currently expect "
+                 "for the next 10 years - a more cautious, arguably more realistic, test of the plan. Day-"
+                 "to-day ups and downs and worst-case scenarios still come from real market history either "
+                 "way - only the AVERAGE return assumption moves.",
+        )
+        cma_blend = cma_blend_pct / 100.0
+        if cma_blend > 0:
+            _cma_selected_classes = set()
+            for _n in list(accum_chosen) + list(chosen if show_decum else []):
+                _cma_selected_classes |= set(asset_class_weights(_n).index)
+            _cma_uncovered = sorted(_cma_selected_classes - set(cma_mod.CMA_ANNUAL.keys()))
+            if _cma_uncovered:
+                st.caption(
+                    f"Pulling most selected asset classes **{cma_blend_pct}%** toward forward-looking "
+                    f"forecasts - **except** {', '.join(_cma_uncovered)}, which have no published "
+                    "forecast and stay at their historical average."
+                )
+            else:
+                st.caption(
+                    f"Pulling every selected asset class **{cma_blend_pct}%** toward forward-looking "
+                    "forecasts."
+                )
 
     with tab_data:
         with st.expander("📤 Add new asset-class return data"):
@@ -1287,35 +1334,6 @@ with st.sidebar:
                  "settings gives the same answer. Change it to sanity-check that results aren't a fluke "
                  "of one particular random draw.",
         )
-
-        st.header("How optimistic should the assumptions be?")
-        cma_blend_pct = st.slider(
-            "Lean on future forecasts, not just the past (0% = pure history, 100% = pure forecast)",
-            0, 100, 0, step=5, format="%d%%",
-            help="In short: by default (0%), the tool assumes the future looks like 2000-2026, which was "
-                 "a strong run for stock markets. Moving this slider makes the tool assume somewhat lower "
-                 "average returns instead, in line with what professional forecasters currently expect "
-                 "for the next 10 years - a more cautious, arguably more realistic, test of the plan. Day-"
-                 "to-day ups and downs and worst-case scenarios still come from real market history either "
-                 "way - only the AVERAGE return assumption moves.",
-        )
-        cma_blend = cma_blend_pct / 100.0
-        if cma_blend > 0:
-            _cma_selected_classes = set()
-            for _n in list(accum_chosen) + list(chosen if show_decum else []):
-                _cma_selected_classes |= set(asset_class_weights(_n).index)
-            _cma_uncovered = sorted(_cma_selected_classes - set(cma_mod.CMA_ANNUAL.keys()))
-            if _cma_uncovered:
-                st.caption(
-                    f"Pulling most selected asset classes **{cma_blend_pct}%** toward forward-looking "
-                    f"forecasts - **except** {', '.join(_cma_uncovered)}, which have no published "
-                    "forecast and stay at their historical average."
-                )
-            else:
-                st.caption(
-                    f"Pulling every selected asset class **{cma_blend_pct}%** toward forward-looking "
-                    "forecasts."
-                )
 
         st.header("How long might the client actually live?")
         use_mortality = st.checkbox(
@@ -1663,7 +1681,8 @@ if show_decum:
         st.divider()
         st.markdown('<div id="sec-fee"></div>', unsafe_allow_html=True)
         render_fee_sensitivity_section(ordered_names(results), asset_df, cpi, profile_kwargs, method,
-                                        n_sims, block_mean, seed)
+                                        n_sims, block_mean, seed,
+                                        reset_nonce=st.session_state.get("reset_nonce", 0))
         st.divider()
         render_holdings_section(ordered_names(results), show_allocation_chart=False)
         st.divider()
@@ -1762,6 +1781,16 @@ if show_accum or show_decum:
         value=False,
     )
     if show_detail:
+        st.caption(
+            "**Correlation** - do these asset classes actually diversify each other · "
+            "**Mortality** - realistic life-expectancy odds instead of a fixed horizon · "
+            "**Historical check** - each portfolio's raw historical return path · "
+            "**Equity sweep** - what different growth/defensive splits would do · "
+            "**Sensitivity** - scanning withdrawal rate and guardrail width · "
+            "**Glide path** - de-risking (or up-risking) equity weight over time · "
+            "**Annuity** - swapping part of the pot for a guaranteed income · "
+            "**Holdings** - full underlying fund list per portfolio."
+        )
         tab_corr, tab_mort, tab_hist, tab_sweep, tab_sens, tab_glide, tab_ann, tab_hold = st.tabs([
             "Correlation", "Mortality", "Historical check", "Equity sweep", "Sensitivity",
             "Glide path", "Annuity", "Holdings",
