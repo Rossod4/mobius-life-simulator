@@ -378,7 +378,7 @@ def render_comparison_section(title, caption, names, sim_results, hist_profile_k
             xaxis_title="Date", yaxis_title="Portfolio value (£)", height=380,
             margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=-0.2),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.caption(
             "Replays the actual historical sequence of returns from the earliest available date - one "
             "concrete real-world path (matching the 'Portfolio Value' chart style from the previous "
@@ -509,7 +509,7 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
         barmode="group", yaxis_title="Weight (%)", height=380,
         margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=-0.25),
     )
-    st.plotly_chart(fig_alloc, use_container_width=True)
+    st.plotly_chart(fig_alloc, use_container_width=True, config={"displayModeBar": False})
     if any(w.get("Alternatives (hedge funds)", 0.0) > 0 for w in group_weights.values()):
         st.caption(
             "The 'Alternatives (hedge funds)' bucket has no equivalent holding in the portfolio that "
@@ -562,7 +562,7 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
                 height=480, yaxis_title="Growth of £100", margin=dict(l=10, r=10, t=10, b=10),
                 legend=dict(orientation="h", y=-0.25, font=dict(size=10)),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.divider()
     st.subheader("Illustrative pot growth by asset-class allocation")
@@ -593,7 +593,7 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
                 height=480, yaxis_title="£", margin=dict(l=10, r=10, t=10, b=10),
                 legend=dict(orientation="h", y=-0.25, font=dict(size=10)),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 def render_holdings_section(names, show_allocation_chart: bool = True) -> None:
@@ -632,7 +632,7 @@ def render_holdings_section(names, show_allocation_chart: bool = True) -> None:
             barmode="group", yaxis_title="Weight (%)", height=380,
             margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=-0.25),
         )
-        st.plotly_chart(fig_alloc, use_container_width=True)
+        st.plotly_chart(fig_alloc, use_container_width=True, config={"displayModeBar": False})
         if any(w.get("Alternatives (hedge funds)", 0.0) > 0 for w in group_weights.values()):
             st.caption(
                 "'Alternatives (hedge funds)' has no equivalent in portfolios that don't hold it - shown "
@@ -907,6 +907,10 @@ st.caption(
     "Aspen Advisers UK's own 'Growth Passive Plus' and 'Four Seasons Fund' lineups vs Mobius's "
     "Alternative and Better. Uses Bloomberg data to 14 July 2026."
 )
+# Reserved here (right under the title) so the nav bar renders at the TOP of the page, matching
+# hero_container's own pattern below - actual content is filled in once show_accum/show_decum and
+# results/accum_results are known, much further down the script, without moving its page position.
+nav_container = st.container()
 hero_container = st.container()
 with st.expander("New to this tool? Read this first"):
     st.markdown(
@@ -1447,6 +1451,38 @@ for name in chosen:
     results[name] = _cached_run_simulation(name, asset_df, cpi, profile, method, n_sims,
                                             block_mean, seed)
 
+# Sticky jump-nav - only lists sections that will actually render below (mirrors each section's own
+# gating condition exactly), filled into the container reserved right under the title so it stays
+# pinned at the top of the page while scrolling, rather than needing to scroll back up to navigate -
+# useful mid-meeting when a question needs jumping straight to a specific chart.
+_nav_items = []
+if show_accum and accum_chosen:
+    _nav_items.append(("sec-accum", "Accumulation"))
+if show_decum and results:
+    _nav_items.append(("sec-decum", "Decumulation"))
+    _nav_items.append(("sec-fee", "Fee sensitivity"))
+    _nav_items.append(("sec-assetclass", "Asset classes"))
+if show_decum:
+    _nav_items.append(("sec-stats", "Statistics"))
+    _nav_items.append(("sec-evolve", "Pot evolution"))
+    _nav_items.append(("sec-legacy", "Legacy"))
+if show_accum or show_decum:
+    _nav_items.append(("sec-detail", "Detailed analysis"))
+if _nav_items:
+    _nav_links_html = "".join(
+        f'<a href="#{_anchor}" style="margin-right:1.25rem; text-decoration:none; '
+        f'font-size:0.82rem; font-weight:600; color:inherit; opacity:0.75;">{_label}</a>'
+        for _anchor, _label in _nav_items
+    )
+    with nav_container:
+        st.markdown(
+            '<div style="position:sticky; top:0; z-index:999; padding:0.5rem 0.25rem; '
+            'background:rgba(128,128,128,0.12); backdrop-filter:blur(8px); '
+            'border-bottom:1px solid rgba(128,128,128,0.25); margin-bottom:0.5rem; '
+            f'white-space:nowrap; overflow-x:auto;">{_nav_links_html}</div>',
+            unsafe_allow_html=True,
+        )
+
 # ACCUMULATION section - the 5-second takeaway, filled into the container declared right under the
 # title so it renders at the TOP of the page even though it depends on the sidebar inputs computed
 # above. accum_chosen can be any registered portfolio(s), not a fixed pair - the "cost difference
@@ -1455,6 +1491,7 @@ for name in chosen:
 # holding the same indices at different fees); anything else just gets the plain comparison cards.
 if show_accum:
     with hero_container:
+        st.markdown('<div id="sec-accum"></div>', unsafe_allow_html=True)
         accum_title = (f"Accumulation — {' vs '.join(display_name(n) for n in accum_chosen)}"
                         if accum_chosen else "Accumulation")
         render_comparison_section(
@@ -1510,7 +1547,7 @@ if show_accum:
                     xaxis_title="Year", yaxis_title="£", height=340,
                     margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=-0.2),
                 )
-                st.plotly_chart(fig_fee, use_container_width=True)
+                st.plotly_chart(fig_fee, use_container_width=True, config={"displayModeBar": False})
                 fee_gap = val_b[-1] - val_a[-1]
                 st.caption(
                     f"Both lines hold the SAME asset-class exposure and the SAME average market growth "
@@ -1605,6 +1642,7 @@ if cma_blend > 0:
 
 if show_decum:
     if results:
+        st.markdown('<div id="sec-decum"></div>', unsafe_allow_html=True)
         render_comparison_section(
             f"Decumulation — {' vs '.join(display_name(n) for n in ordered_names(results))}",
             "With withdrawals: the client spends from this pot every year, so probability of ruin is the "
@@ -1623,14 +1661,17 @@ if show_decum:
                  "hand it to the client or attach it to a follow-up email.",
         )
         st.divider()
+        st.markdown('<div id="sec-fee"></div>', unsafe_allow_html=True)
         render_fee_sensitivity_section(ordered_names(results), asset_df, cpi, profile_kwargs, method,
                                         n_sims, block_mean, seed)
         st.divider()
         render_holdings_section(ordered_names(results), show_allocation_chart=False)
         st.divider()
+        st.markdown('<div id="sec-assetclass"></div>', unsafe_allow_html=True)
         render_fs_better_asset_class_comparison(asset_df)
         st.divider()
 
+    st.markdown('<div id="sec-stats"></div>', unsafe_allow_html=True)
     st.subheader("Headline statistics")
     summary_rows = []
     for name in ordered_names(results):
@@ -1663,6 +1704,7 @@ if show_decum:
         f"sidebar to tighten the interval; roughly 4x the sims halves the margin of error."
     )
 
+    st.markdown('<div id="sec-evolve"></div>', unsafe_allow_html=True)
     st.subheader("How the pot value could evolve over time")
     st.caption(
         "All portfolios plotted together so they're directly comparable. The bold line is each "
@@ -1688,8 +1730,9 @@ if show_decum:
         margin=dict(l=10, r=10, t=20, b=10), hovermode="x unified",
         legend=dict(orientation="h", y=-0.15),
     )
-    st.plotly_chart(fig_overlay, use_container_width=True)
+    st.plotly_chart(fig_overlay, use_container_width=True, config={"displayModeBar": False})
 
+    st.markdown('<div id="sec-legacy"></div>', unsafe_allow_html=True)
     st.subheader("What might be left over at the end (the 'legacy')")
     st.caption(
         "Each box shows the range of estate values left across all simulated futures for that portfolio - "
@@ -1703,7 +1746,7 @@ if show_decum:
         fig2.add_trace(go.Box(y=res.legacy, name=display_name(name), boxmean=True,
                                marker_color=portfolio_color(name)))
     fig2.update_layout(yaxis_title="Estate at end of horizon (£)", height=400, showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
 # Detailed analysis is available whenever ANYTHING is shown (not just Decumulation) - several tabs
 # below (Correlation, Historical check) are general-purpose, not decumulation-specific, so they
@@ -1713,6 +1756,7 @@ if show_decum:
 # message instead of silently doing nothing.
 if show_accum or show_decum:
     st.divider()
+    st.markdown('<div id="sec-detail"></div>', unsafe_allow_html=True)
     show_detail = st.checkbox(
         "Show detailed analysis (correlations, mortality, historical check, sensitivities, glide path, annuity, holdings)",
         value=False,
@@ -1763,7 +1807,7 @@ if show_accum or show_decum:
                 colorbar=dict(title="Correlation"),
             ))
             fig_corr.update_layout(height=max(400, 32 * len(corr)), margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig_corr, use_container_width=True)
+            st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
 
         with tab_mort:
             if use_mortality and not chosen:
@@ -1815,7 +1859,7 @@ if show_accum or show_decum:
                     fig_surv.update_layout(xaxis_title="Year", yaxis_title="Probability alive", yaxis_range=[0, 1],
                                             height=380, margin=dict(l=10, r=10, t=20, b=10),
                                             legend=dict(orientation="h", y=-0.2))
-                    st.plotly_chart(fig_surv, use_container_width=True)
+                    st.plotly_chart(fig_surv, use_container_width=True, config={"displayModeBar": False})
 
                     le_own = life_expectancy(qx_map[sex], age)
                     le_text = f"Average life expectancy — {sex}, age {age}: **{le_own:.1f} more years**"
@@ -1858,7 +1902,7 @@ if show_accum or show_decum:
             fig3 = go.Figure()
             fig3.add_trace(go.Scatter(x=hist_df["Date"], y=hist_df["PortfolioValue"], mode="lines+markers", name="Portfolio value"))
             fig3.update_layout(height=350, yaxis_title="£", margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
         with tab_sweep:
             st.subheader("How much should be in shares vs. safer assets?")
@@ -1911,7 +1955,7 @@ if show_accum or show_decum:
                         xaxis_title="Total equity weight (%)", yaxis_title="Probability of ruin (%)",
                         height=400, margin=dict(l=10, r=10, t=40, b=10),
                     )
-                    st.plotly_chart(fig4, use_container_width=True)
+                    st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
                 with sweep_col2:
                     fig5 = go.Figure()
                     for name, df_sweep in sweep_results.items():
@@ -1924,7 +1968,7 @@ if show_accum or show_decum:
                         xaxis_title="Total equity weight (%)", yaxis_title="Median legacy (£)",
                         height=400, margin=dict(l=10, r=10, t=40, b=10),
                     )
-                    st.plotly_chart(fig5, use_container_width=True)
+                    st.plotly_chart(fig5, use_container_width=True, config={"displayModeBar": False})
 
                 st.caption(
                     "Each point is an independent Monte Carlo run at that equity weight, so the lines carry their "
@@ -1984,7 +2028,7 @@ if show_accum or show_decum:
                     fig6.update_layout(title="Probability of ruin vs withdrawal rate",
                                         xaxis_title="Initial withdrawal rate (%)", yaxis_title="Probability of ruin (%)",
                                         height=400, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig6, use_container_width=True)
+                    st.plotly_chart(fig6, use_container_width=True, config={"displayModeBar": False})
                     with st.expander("Withdrawal-rate sensitivity — full data"):
                         for name, df_wr in wr_results.items():
                             st.markdown(f"**{display_name(name)}**")
@@ -2018,7 +2062,7 @@ if show_accum or show_decum:
                         fig7.update_layout(title="Probability of ruin vs guardrail band",
                                             xaxis_title="Guardrail band (± %)", yaxis_title="Probability of ruin (%)",
                                             height=380, margin=dict(l=10, r=10, t=40, b=10))
-                        st.plotly_chart(fig7, use_container_width=True)
+                        st.plotly_chart(fig7, use_container_width=True, config={"displayModeBar": False})
                     with band_col2:
                         fig8 = go.Figure()
                         for name, df_band in band_results.items():
@@ -2028,7 +2072,7 @@ if show_accum or show_decum:
                         fig8.update_layout(title="Avg shortfall years vs guardrail band",
                                             xaxis_title="Guardrail band (± %)", yaxis_title="Avg years with a spend cut",
                                             height=380, margin=dict(l=10, r=10, t=40, b=10))
-                        st.plotly_chart(fig8, use_container_width=True)
+                        st.plotly_chart(fig8, use_container_width=True, config={"displayModeBar": False})
                     with st.expander("Guardrail-band sensitivity — full data"):
                         for name, df_band in band_results.items():
                             st.markdown(f"**{display_name(name)}**")
@@ -2067,7 +2111,7 @@ if show_accum or show_decum:
                         xaxis_title="Total equity weight", yaxis_title="Withdrawal rate",
                         height=450, margin=dict(l=10, r=10, t=40, b=10),
                     )
-                    st.plotly_chart(fig10, use_container_width=True)
+                    st.plotly_chart(fig10, use_container_width=True, config={"displayModeBar": False})
                     with st.expander("Shortfall heatmap — full data"):
                         st.dataframe(hm_df.style.format("{:.1%}"), use_container_width=True)
 
@@ -2127,7 +2171,7 @@ if show_accum or show_decum:
                 fig9.update_layout(title="Median portfolio value over time: fixed vs glide path",
                                     xaxis_title="Year", yaxis_title="Portfolio value (£)", height=400,
                                     margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig9, use_container_width=True)
+                st.plotly_chart(fig9, use_container_width=True, config={"displayModeBar": False})
 
         with tab_ann:
             st.subheader("Should part of the pot be swapped for a guaranteed income?")
@@ -2242,7 +2286,7 @@ if show_accum or show_decum:
                     xaxis_title="Year", yaxis_title="Pot value (£)", height=400,
                     margin=dict(l=10, r=10, t=40, b=10),
                 )
-                st.plotly_chart(fig_ann, use_container_width=True)
+                st.plotly_chart(fig_ann, use_container_width=True, config={"displayModeBar": False})
                 st.caption(
                     "Annuitizing shrinks the pot immediately (money moves out to buy the annuity) but replaces "
                     "part of the withdrawal need with guaranteed income for life, which is why probability of "
