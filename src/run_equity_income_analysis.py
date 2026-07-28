@@ -46,7 +46,15 @@ def main():
     print("TASK 14 - systematic basket search (every 3-share equal-weight combination, ranked by")
     print("actual probability of ruin - not just a hand-picked pair)")
     print("=" * 78)
-    top_baskets = find_best_baskets(equity_df, cpi, profile, basket_size=3, top_n=5)
+    # Search at a reduced n_sims first (~10x faster, ~134ms/combo vs ~1.4s/combo measured on this
+    # data - the combinatorial count (C(n,3)) grows fast as the share universe widens, e.g. 560
+    # combos for a 16-share universe, so full n_sims=2000 per combo doesn't scale for the search
+    # step). This is a screening pass to find the CANDIDATE winner, not the final reported number -
+    # the winning basket is re-run at full n_sims below (see TASK 16) before anything is quoted.
+    SEARCH_N_SIMS = 300
+    top_baskets = find_best_baskets(equity_df, cpi, profile, basket_size=3, top_n=5,
+                                     n_sims=SEARCH_N_SIMS)
+    print(f"(search run at n_sims={SEARCH_N_SIMS} for speed - re-verified at full n_sims below)")
     print(top_baskets.to_string(index=False))
 
     best_basket = top_baskets.iloc[0]["Basket"]
