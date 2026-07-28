@@ -1,0 +1,17 @@
+Ticker,BloombergTicker,Company,Sector,Note
+ULVR,ULVR LN Equity,Unilever plc,Consumer Staples,Long-listed FTSE 100 staple; consistent dividend history
+DGE,DGE LN Equity,Diageo plc,Consumer Staples,Long-listed; global drinks brands
+TSCO,TSCO LN Equity,Tesco plc,Consumer Staples,UK retail; dividend cut 2014-15 - useful stress case
+BATS,BATS LN Equity,British American Tobacco plc,Consumer Staples,High yield; regulatory/structural decline risk in sector
+GSK,GSK LN Equity,GSK plc,Healthcare,Pharma; demerged Haleon in 2022 - check return series continuity
+AZN,AZN LN Equity,AstraZeneca plc,Healthcare,Lower yield/more growth-oriented - useful contrast to income names
+HSBA,HSBA LN Equity,HSBC Holdings plc,Financials,Cut dividend 2020 (COVID) - useful stress case
+LLOY,LLOY LN Equity,Lloyds Banking Group plc,Financials,Cut dividend 2020 (COVID) - useful stress case
+LGEN,LGEN LN Equity,Legal & General Group plc,Financials,"Insurance; historically high, stable yield"
+AV.,AV/ LN Equity,Aviva plc,Financials,Insurance; cut dividend 2020 (COVID)
+NG.,NG/ LN Equity,National Grid plc,Utilities,Regulated utility; historically defensive/stable payer
+SVT,SVT LN Equity,Severn Trent plc,Utilities,Regulated water utility
+RIO,RIO LN Equity,Rio Tinto plc,Mining,Commodity-cyclical; variable dividend policy
+AAL,AAL LN Equity,Anglo American plc,Mining,Commodity-cyclical; cut dividend 2015-16
+SHEL,SHEL LN Equity,Shell plc,Energy,Cut dividend 2020 (COVID) - first cut since WWII at the time
+BP.,BP/ LN Equity,BP plc,Energy,Cut dividend 2020 (COVID)
