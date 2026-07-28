@@ -133,6 +133,28 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def common_available_window(names, asset_df):
+    """The overlap of every named portfolio's OWN available history within asset_df - i.e. the
+    widest window every one of them can actually be bootstrapped over. Returns (start, end) as
+    Timestamps, or None if `names` is empty. Used to auto-align a multi-portfolio comparison to
+    one shared historical period, rather than letting each portfolio silently use whatever
+    (different-length) window its own holdings happen to cover - a portfolio with a shorter data
+    history would otherwise be tested over fewer, and not necessarily the same, market conditions
+    as one being compared against it, which is a real fairness gap, not just a cosmetic one."""
+    starts, ends = [], []
+    for name in names:
+        weights = asset_class_weights(name)
+        fee = weighted_avg_fee(name)
+        monthly = weighted_monthly_returns(weights, fee, asset_df, label=name).dropna()
+        if monthly.empty:
+            continue
+        starts.append(monthly.index.min())
+        ends.append(monthly.index.max())
+    if not starts:
+        return None
+    return max(starts), min(ends)
+
+
 def similar_exposure(name_a: str, name_b: str, tolerance: float = 0.05) -> bool:
     """Whether two portfolios' asset-class weights are close enough to call 'the same underlying
     exposure' - e.g. Original vs Alternative differ by a percentage point or two per asset class
@@ -1294,6 +1316,29 @@ with st.sidebar:
 # tab_data) rather than inline where the slider is defined, so an upload's outer join can't silently
 # re-widen the date range the slider shows. Every chart/statistic below sees only this window.
 asset_df = asset_df[(asset_df.index.date >= window_start) & (asset_df.index.date <= window_end)]
+
+# Auto-align to the common window every CURRENTLY SELECTED portfolio actually has data for. Without
+# this, two portfolios being compared can silently bootstrap over different-length (and not
+# necessarily overlapping) historical periods whenever one of them has a shorter data history than
+# the other - e.g. one portfolio's own holdings might only start in 2001 while another's go back to
+# 1999, so the earlier-starting one would be tested over extra months the other never faced. That's
+# a genuine fairness gap in any side-by-side comparison, not just a cosmetic one, so it's corrected
+# automatically here rather than left to whoever's presenting to remember to narrow the slider by
+# hand. Only ever narrows the window (intersected with whatever the manual slider/stress-scenario
+# selection above already set) - never widens past the user's own choice.
+_active_names = list(accum_chosen if show_accum else []) + list(chosen if show_decum else [])
+_common_window = common_available_window(_active_names, asset_df) if _active_names else None
+if _common_window is not None:
+    _common_start, _common_end = _common_window
+    _aligned_start = max(window_start, _common_start.date())
+    _aligned_end = min(window_end, _common_end.date())
+    if _aligned_start <= _aligned_end and (_aligned_start, _aligned_end) != (window_start, window_end):
+        st.caption(
+            f"Auto-aligned to {_aligned_start} to {_aligned_end}, the common historical window every "
+            "currently selected portfolio actually has data for - so none of them is tested over a "
+            "longer, or different, period than another."
+        )
+        asset_df = asset_df[(asset_df.index.date >= _aligned_start) & (asset_df.index.date <= _aligned_end)]
 
 # Forward-looking CMA blend: recentre each asset class's mean monthly return, leaving volatility/
 # correlation/shape untouched (see src/cma.py). Applied ONCE here, before any simulation function
