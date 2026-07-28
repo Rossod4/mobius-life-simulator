@@ -61,6 +61,22 @@ def _cached_run_simulation(name, asset_df, cpi, profile, method, n_sims, block_m
     return run_simulation(name, asset_df, cpi, profile, method=method, n_sims=n_sims,
                            block_mean=block_mean, seed=seed)
 
+
+@st.cache_data(show_spinner=False)
+def _cached_run_simulation_fee_override(name, fee_override, asset_df, cpi, profile, method, n_sims,
+                                         block_mean, seed):
+    """Like _cached_run_simulation, but re-runs `name`'s own real weights at a caller-supplied fee
+    instead of its actual weighted-average OCF - lets a live fee slider show probability of ruin
+    moving in response, without touching the underlying holdings data. Computes the portfolio's
+    weights from `name` INSIDE the cached function (rather than accepting a weights Series as a
+    parameter) so the cache key stays simple, hashable primitives - a pandas Series would work with
+    st.cache_data's hasher too, but there's no reason to pay that cost when `name` alone already
+    determines the weights."""
+    weights = asset_class_weights(name)
+    return run_simulation(name, asset_df, cpi, profile, method=method, n_sims=n_sims,
+                           block_mean=block_mean, seed=seed,
+                           custom_weights=weights, custom_fee=fee_override)
+
 # Client-facing branding: internal simulation keys (used throughout src/portfolios.py and
 # src/engine.py) are left untouched - only how a portfolio is LABELLED and COLOURED in this app
 # changes, driven entirely by data/portfolio_meta.csv (DisplayName/Owner/Provider per portfolio),
@@ -369,6 +385,64 @@ def render_comparison_section(title, caption, names, sim_results, hist_profile_k
             "Mobius model), alongside the Monte Carlo-based statistics in the cards above."
         )
     return hist_paths
+
+
+def render_fee_sensitivity_section(names, asset_df, cpi, profile_kwargs, method, n_sims, block_mean,
+                                    seed) -> None:
+    """Live 'what if the fee were X' exploration - one slider per portfolio, independent of the
+    others, re-running the simulation at that fee (holding the portfolio's own real holdings/weights
+    fixed) so probability of ruin and the other headline figures respond immediately. Sits alongside
+    the fixed-fee comparison above rather than replacing it - purely an interactive tool for talking
+    through 'what does cost alone buy you', it never touches any underlying data."""
+    names = [n for n in names if n in PORTFOLIOS]
+    if not names:
+        return
+
+    st.subheader("Fee sensitivity - adjust each portfolio's fee live")
+    st.caption(
+        "Each slider re-runs the simulation for that portfolio at a chosen fee, independent of the "
+        "other portfolio and independent of its actual weighted-average OCF shown further up the "
+        "page - holdings and weights stay exactly as they are, only the fee changes. Purely an "
+        "exploration tool: nothing here alters any underlying data."
+    )
+    cols = st.columns(len(names))
+    for col, name in zip(cols, names):
+        with col:
+            current_bps = weighted_avg_fee(name) * 10_000
+            fee_bps = st.slider(
+                f"{display_name(name)} fee (bps)", min_value=0, max_value=150,
+                value=int(round(current_bps)), step=1, key=f"fee_slider_{name}",
+                help=f"Actual weighted-average OCF is currently {current_bps:.1f} bps.",
+            )
+            fee_frac = fee_bps / 10_000
+            profile = ClientProfile(**profile_kwargs)
+            res = _cached_run_simulation_fee_override(name, fee_frac, asset_df, cpi, profile, method,
+                                                        n_sims, block_mean, seed)
+            s = res.summary()
+            weights = asset_class_weights(name)
+            hist_df = historical_single_path(name, asset_df, cpi, profile, custom_weights=weights,
+                                              custom_fee=fee_frac)
+            cum_pct = (hist_df["PortfolioValue"].iloc[-1] / profile_kwargs["starting_pot"] - 1) * 100
+            irr_pot = compute_irr(hist_df, spend_column="Withdrawal")
+
+            with st.container(border=True):
+                st.markdown(
+                    f"<div style='color:{portfolio_color(name)}; font-weight:700; "
+                    f"font-size:1.05rem;'>{display_name(name)}</div>",
+                    unsafe_allow_html=True,
+                )
+                ruin_pct = s["Probability of ruin"] * 100
+                ruin_color = "#0ca30c" if ruin_pct < 10 else "#c98500" if ruin_pct < 30 else "#d03b3b"
+                st.markdown(
+                    "<div style='font-size:0.72rem; color:#898781; font-weight:600; "
+                    "text-transform:uppercase; letter-spacing:0.04em; margin-top:6px;'>"
+                    "Probability of ruin</div>"
+                    f"<div style='font-size:2.3rem; font-weight:800; color:{ruin_color}; "
+                    f"line-height:1.15;'>{ruin_pct:.1f}%</div>",
+                    unsafe_allow_html=True,
+                )
+                st.metric("Cumulative pot performance", f"{cum_pct:+.1f}%")
+                st.metric("Pot-only IRR", f"{irr_pot*100:.2f}% pa" if not np.isnan(irr_pot) else "n/a")
 
 
 def _holdings_column_config():
@@ -1611,6 +1685,10 @@ if show_decum:
             help="A one-page takeaway covering both the Accumulation and Decumulation comparisons above - "
                  "hand it to the client or attach it to a follow-up email.",
         )
+        st.divider()
+        render_fee_sensitivity_section(ordered_names(results), asset_df, cpi, profile_kwargs, method,
+                                        n_sims, block_mean, seed)
+        st.divider()
         render_holdings_section(ordered_names(results), show_allocation_chart=False)
         st.divider()
         render_fs_better_asset_class_comparison(asset_df)
