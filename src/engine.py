@@ -151,6 +151,12 @@ class SimResult:
     spend_paths: np.ndarray      # (n_sims, horizon_years) nominal annual spend actually taken
     ruin_year: np.ndarray        # (n_sims,) year index of ruin, or -1 if never ruined
     profile: ClientProfile
+    # (n_sims, horizon_years) each year's NET desired spend (post-guardrail, inflation-adjusted) -
+    # i.e. nominal_spend_target from the simulation loop, on the same net basis as spend_paths, so
+    # spend_paths < spend_target_paths is a genuine like-for-like shortfall. Optional/None for any
+    # older caller that doesn't supply it - lifetime_spend_stats() falls back to a cruder flat
+    # benchmark in that case rather than erroring.
+    spend_target_paths: np.ndarray = None
 
     @property
     def prob_ruin(self):
@@ -184,6 +190,61 @@ class SimResult:
         desired = self.profile.initial_annual_spend
         shortfall = np.maximum(0, desired - self.spend_paths[:, :]) > 1e-6
         return shortfall.sum(axis=1)
+
+    def ruin_age_stats(self):
+        """Age-at-ruin breakdown for the paths that DO ruin (paths that never ruin are excluded, not
+        counted as e.g. age 0) - paths ruined (count), and the mean/median/earliest age at which the
+        pot hit zero, converting the stored 0-indexed ruin_year back into an actual age via the
+        client's starting_age. Returns None fields when no path ever ruins."""
+        ruined = self.ruin_year >= 0
+        n_ruined = int(ruined.sum())
+        if n_ruined == 0:
+            return {"paths_ruined": 0, "mean_age_at_ruin": None, "median_age_at_ruin": None,
+                    "earliest_ruin_age": None}
+        ages = self.profile.starting_age + self.ruin_year[ruined]
+        return {
+            "paths_ruined": n_ruined,
+            "mean_age_at_ruin": float(ages.mean()),
+            "median_age_at_ruin": float(np.median(ages)),
+            "earliest_ruin_age": int(ages.min()),
+        }
+
+    def lifetime_spend_stats(self):
+        """Total NOMINAL spend actually received over the whole simulated horizon per path (sum of
+        spend_paths - includes guaranteed income like State Pension, which keeps paying even after
+        the discretionary pot is exhausted, see run_simulation's `guaranteed_nominal` comment).
+        Shortfall compares each year's ACTUAL net spend against that SAME year's DESIRED net spend
+        (spend_target_paths - the inflation-adjusted, post-guardrail target, on the same net basis
+        as spend_paths) - a genuine like-for-like gap, not just spend vs. a flat today's-money
+        figure (which would understate shortfall in nominal terms once inflation has compounded for
+        20+ years). Falls back to the cruder flat-benchmark comparison shortfall_years() uses if an
+        older SimResult without spend_target_paths is passed in."""
+        lifetime_spend = self.spend_paths.sum(axis=1)
+        if self.spend_target_paths is not None:
+            lifetime_shortfall = np.maximum(0, self.spend_target_paths - self.spend_paths).sum(axis=1)
+        else:
+            desired = self.profile.initial_annual_spend
+            lifetime_shortfall = np.maximum(0, desired - self.spend_paths).sum(axis=1)
+        return {
+            "lifetime_spend": lifetime_spend,
+            "median_lifetime_spend": float(np.median(lifetime_spend)),
+            "mean_lifetime_spend": float(lifetime_spend.mean()),
+            "median_shortfall": float(np.median(lifetime_shortfall)),
+            "mean_shortfall": float(lifetime_shortfall.mean()),
+        }
+
+    def solvency_by_age(self):
+        """Fraction of paths still solvent (not yet ruined) at the END of each simulated year, as a
+        function of age - the 'outcome probability by age' curve: starts at 100% and steps down each
+        time a cohort of paths ruins. `ruin_year > t` (not >=) since ruin_year is the 0-indexed year
+        DURING which a path ruins, so it is still solvent through the end of that same year's data
+        point - i.e. solvent-at-t means ruin happened later than t, or never."""
+        years = np.arange(self.profile.horizon_years + 1)
+        ages = self.profile.starting_age + years
+        solvent_frac = np.array([
+            float(((self.ruin_year < 0) | (self.ruin_year > t)).mean()) for t in years
+        ])
+        return ages, solvent_frac
 
     def summary(self):
         sy = self.shortfall_years()
@@ -380,6 +441,7 @@ def run_simulation(portfolio_name, asset_df, cpi_series, profile: ClientProfile,
     years = profile.horizon_years
     paths = np.empty((n_sims, years + 1))
     spend_paths = np.empty((n_sims, years))
+    spend_target_paths = np.empty((n_sims, years))
     ruin_year = np.full(n_sims, -1)
 
     paths[:, 0] = profile.starting_pot
@@ -448,8 +510,12 @@ def run_simulation(portfolio_name, asset_df, cpi_series, profile: ClientProfile,
         guaranteed_nominal = sp_nominal + profile.annuity_income_nominal
         spend_paths[:, y] = (tax.net_income(guaranteed_nominal + actual_spend) if profile.apply_tax
                               else guaranteed_nominal + actual_spend)
+        # spend_target_paths records the NET figure the client actually wanted this year
+        # (nominal_spend_target - inflation-adjusted, post-guardrail) on that same net basis, so
+        # spend_paths vs spend_target_paths is a genuine like-for-like shortfall comparison.
+        spend_target_paths[:, y] = nominal_spend_target
 
-    return SimResult(portfolio_name, method, n_sims, paths, spend_paths, ruin_year, profile)
+    return SimResult(portfolio_name, method, n_sims, paths, spend_paths, ruin_year, profile, spend_target_paths)
 
 
 def equity_sweep(portfolio_name, asset_df, cpi_series, profile: ClientProfile,
@@ -639,6 +705,7 @@ def run_glide_path_simulation(portfolio_name, asset_df, cpi_series, profile: Cli
 
     paths = np.empty((n_sims, years + 1))
     spend_paths = np.empty((n_sims, years))
+    spend_target_paths = np.empty((n_sims, years))
     ruin_year = np.full(n_sims, -1)
     paths[:, 0] = profile.starting_pot
     wr0 = profile.initial_annual_spend / profile.starting_pot
@@ -686,9 +753,11 @@ def run_glide_path_simulation(portfolio_name, asset_df, cpi_series, profile: Cli
         guaranteed_nominal = sp_nominal + profile.annuity_income_nominal
         spend_paths[:, y] = (tax.net_income(guaranteed_nominal + actual_spend) if profile.apply_tax
                               else guaranteed_nominal + actual_spend)
+        spend_target_paths[:, y] = nominal_spend_target
 
     method_label = f"{method}+glide({start_equity_weight:.0%}->{end_equity_weight:.0%})"
-    return SimResult(portfolio_name, method_label, n_sims, paths, spend_paths, ruin_year, profile)
+    return SimResult(portfolio_name, method_label, n_sims, paths, spend_paths, ruin_year, profile,
+                      spend_target_paths)
 
 
 def sims_needed_for_margin(p_estimate, margin=0.02, z=1.96):

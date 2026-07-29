@@ -1785,15 +1785,16 @@ if show_accum or show_decum:
             "**Correlation** - do these asset classes actually diversify each other · "
             "**Mortality** - realistic life-expectancy odds instead of a fixed horizon · "
             "**Historical check** - each portfolio's raw historical return path · "
+            "**Simulated paths** - individual simulated futures, ruin ages, and lifetime spending · "
             "**Equity sweep** - what different growth/defensive splits would do · "
             "**Sensitivity** - scanning withdrawal rate and guardrail width · "
             "**Glide path** - de-risking (or up-risking) equity weight over time · "
             "**Annuity** - swapping part of the pot for a guaranteed income · "
             "**Holdings** - full underlying fund list per portfolio."
         )
-        tab_corr, tab_mort, tab_hist, tab_sweep, tab_sens, tab_glide, tab_ann, tab_hold = st.tabs([
-            "Correlation", "Mortality", "Historical check", "Equity sweep", "Sensitivity",
-            "Glide path", "Annuity", "Holdings",
+        tab_corr, tab_mort, tab_hist, tab_paths, tab_sweep, tab_sens, tab_glide, tab_ann, tab_hold = st.tabs([
+            "Correlation", "Mortality", "Historical check", "Simulated paths", "Equity sweep",
+            "Sensitivity", "Glide path", "Annuity", "Holdings",
         ])
         with tab_corr:
             st.subheader("How much do these investments actually move together?")
@@ -1932,6 +1933,97 @@ if show_accum or show_decum:
             fig3.add_trace(go.Scatter(x=hist_df["Date"], y=hist_df["PortfolioValue"], mode="lines+markers", name="Portfolio value"))
             fig3.update_layout(height=350, yaxis_title="£", margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+
+        with tab_paths:
+            st.subheader("What do the individual simulated futures actually look like?")
+            st.caption(
+                "The chart above ('How the pot value could evolve over time') shows a smoothed median "
+                "and a 50% band across every portfolio at once. This tab shows one portfolio's raw, "
+                "individual simulated paths instead - useful for seeing the actual spread and how "
+                "ruin plays out path-by-path, not just as a single summary percentage."
+            )
+            if not chosen:
+                st.info("Pick at least one Decumulation portfolio (or switch 'What to show' to "
+                        "Decumulation or Both) to see its simulated paths.")
+            else:
+                paths_name = st.selectbox("Portfolio for simulated paths", chosen, format_func=display_name,
+                                           key="paths_tab_portfolio")
+                res = results[paths_name]
+
+                st.markdown("**Simulated wealth paths**")
+                rng_paths = np.random.default_rng(7)
+                n_show = min(300, res.n_sims)
+                sample_idx = rng_paths.choice(res.n_sims, size=n_show, replace=False)
+                years_axis = np.arange(res.profile.horizon_years + 1)
+                ages_axis = res.profile.starting_age + years_axis
+                # one Scattergl trace with NaN row-separators, not one trace per path - hundreds of
+                # separate go.Scatter traces render far slower in the browser than a single trace.
+                x_spaghetti = np.tile(np.append(ages_axis, np.nan), n_show)
+                y_spaghetti = np.concatenate([
+                    np.append(res.paths[i], np.nan) for i in sample_idx
+                ])
+                fig_paths = go.Figure()
+                fig_paths.add_trace(go.Scattergl(
+                    x=x_spaghetti, y=y_spaghetti, mode="lines",
+                    line=dict(width=0.6, color=portfolio_color(paths_name)), opacity=0.15,
+                    hoverinfo="skip", showlegend=False,
+                ))
+                fig_paths.add_hline(y=0, line=dict(color="crimson", width=1.5, dash="dash"))
+                fig_paths.update_layout(
+                    height=440, xaxis_title="Age", yaxis_title="Portfolio value (£)",
+                    margin=dict(l=10, r=10, t=10, b=10),
+                )
+                st.plotly_chart(fig_paths, use_container_width=True, config={"displayModeBar": False})
+                st.caption(f"Showing a random sample of {n_show:,} of the {res.n_sims:,} simulated paths "
+                           "(all of them plotted individually would be slower to render with no extra "
+                           "visual information - the density above is already representative).")
+
+                st.markdown("**Ruin statistics**")
+                rstats = res.ruin_age_stats()
+                rc1, rc2, rc3, rc4 = st.columns(4)
+                rc1.metric("Paths ruined", f"{rstats['paths_ruined']:,} / {res.n_sims:,}")
+                rc2.metric("Mean age at ruin",
+                           f"{rstats['mean_age_at_ruin']:.1f}" if rstats['mean_age_at_ruin'] is not None else "-")
+                rc3.metric("Median age at ruin",
+                           f"{rstats['median_age_at_ruin']:.0f}" if rstats['median_age_at_ruin'] is not None else "-")
+                rc4.metric("Earliest ruin",
+                           f"age {rstats['earliest_ruin_age']}" if rstats['earliest_ruin_age'] is not None else "-")
+
+                st.markdown("**Lifetime spending - all simulations**")
+                st.caption(
+                    "Total NET spend actually received over the whole simulated horizon per path "
+                    "(includes State Pension/annuity income, which keeps paying even once the "
+                    "discretionary pot is exhausted). Shortfall compares each year's actual spend "
+                    "against that year's own inflation-adjusted, post-guardrail target - not just a "
+                    "flat today's-money figure."
+                )
+                lss = res.lifetime_spend_stats()
+                lc1, lc2, lc3, lc4 = st.columns(4)
+                lc1.metric("Median lifetime spend", f"£{lss['median_lifetime_spend']:,.0f}")
+                lc2.metric("Mean lifetime spend", f"£{lss['mean_lifetime_spend']:,.0f}")
+                lc3.metric("Median shortfall", f"£{lss['median_shortfall']:,.0f}")
+                lc4.metric("Mean shortfall", f"£{lss['mean_shortfall']:,.0f}")
+                quantiles = [10, 25, 50, 75, 90]
+                q_df = pd.DataFrame({
+                    "Quantile": [f"{q}th" for q in quantiles],
+                    "Lifetime spend (£)": [np.percentile(lss["lifetime_spend"], q) for q in quantiles],
+                })
+                st.dataframe(
+                    q_df, use_container_width=True, hide_index=True,
+                    column_config={"Lifetime spend (£)": st.column_config.NumberColumn(format="£%,.0f")},
+                )
+
+                st.markdown("**Outcome probabilities by age**")
+                st.caption("Share of simulated paths still solvent (not yet ruined) by each age.")
+                ages_solv, solv_frac = res.solvency_by_age()
+                fig_solv = go.Figure()
+                fig_solv.add_trace(go.Scatter(x=ages_solv, y=solv_frac * 100, mode="lines",
+                                               line=dict(width=3, color=portfolio_color(paths_name))))
+                fig_solv.update_layout(
+                    height=320, xaxis_title="Age", yaxis_title="Probability still solvent (%)",
+                    yaxis_range=[0, 100], margin=dict(l=10, r=10, t=10, b=10),
+                )
+                st.plotly_chart(fig_solv, use_container_width=True, config={"displayModeBar": False})
 
         with tab_sweep:
             st.subheader("How much should be in shares vs. safer assets?")
