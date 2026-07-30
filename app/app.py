@@ -808,7 +808,19 @@ def build_summary_pdf(accum_results: dict, decum_results: dict, accum_profile_kw
                 f"horizon (fee: {fee_a:.2f}% vs {fee_b:.2f}% pa). These two hold different underlying "
                 f"asset-class exposure, so this reflects cost AND market exposure, not cost alone.",
             )
-        pdf.ln(2)
+        pdf.ln(1)
+    if accum_results:
+        # Accumulation's headline cumulative-performance/IRR figures come from a real historical
+        # replay (historical_single_path), not a Monte Carlo simulation - a distinct, stronger
+        # "past performance" claim than Decumulation's, so it gets its own disclaimer here rather
+        # than being folded into the Monte Carlo wording under Decumulation below.
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(120, 120, 120)
+        pdf.multi_cell(
+            0, 5,
+            "Source: Mobius Analysis. Past performance is not a reliable indicator of future performance.",
+        )
+        pdf.ln(1)
 
     # Decumulation: client context first (spend/withdrawal rate only apply once withdrawals start,
     # so this doesn't belong under Accumulation above), then table (Prob. of ruin kept - the
@@ -844,34 +856,28 @@ def build_summary_pdf(accum_results: dict, decum_results: dict, accum_profile_kw
             f"percentage points versus {display_name(a)}, and {legacy_phrase}, {vol_phrase}.",
         )
         pdf.ln(1)
-        pdf.set_font("Helvetica", "I", 8)
-        pdf.set_text_color(120, 120, 120)
-        pdf.multi_cell(
-            0, 5,
-            "* Withdrawals are taken as a single lump sum at the start of each year, before that "
-            "year's investment growth is applied.",
-        )
-        pdf.ln(2)
 
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(120, 120, 120)
     pdf.multi_cell(
         0, 5,
-        "Source: Mobius Analysis. All data is simulated based upon historical data using Monte Carlo "
-        "simulation methodology. The Monte Carlo simulation is a mathematical technique that uses "
-        "random sampling to estimate the possible outcomes of a process or system. It's used to model "
-        "complex systems with inherent uncertainty, providing insight into how likely different "
-        "outcomes are. See attached Appendix for assumptions used.",
+        "Source: Mobius Analysis. Decumulation annualised performance is simulated based upon "
+        "historical data using Monte Carlo simulation methodology. The Monte Carlo simulation is a "
+        "mathematical technique that uses random sampling to estimate the possible outcomes of a "
+        "process or system. It's used to model complex systems with inherent uncertainty, providing "
+        "insight into how likely different outcomes are. See attached Appendix for assumptions used.",
     )
-    pdf.ln(2)
+    pdf.ln(1)
     pdf.multi_cell(
         0, 5,
         "* Important: Maximum Drawdown (Max DD) and Average Drawdown (Avg DD) figures presented in "
         "this report are calculated based on portfolio performance excluding the impact of investor "
         "withdrawals. As a result, these statistics reflect the strategy's underlying investment "
-        "performance rather than cash-flow-driven declines in portfolio value.",
+        "performance rather than cash-flow-driven declines in portfolio value. Withdrawals are taken "
+        "as a single lump sum at the start of each year, before that year's investment growth is "
+        "applied.",
     )
-    pdf.ln(2)
+    pdf.ln(1)
     pdf.multi_cell(
         0, 5,
         "Pot IRR (Decumulation table): the money-weighted return on the portfolio's own investments "
@@ -880,7 +886,7 @@ def build_summary_pdf(accum_results: dict, decum_results: dict, accum_profile_kw
         "each other.",
     )
 
-    pdf.ln(2)
+    pdf.ln(1)
     pdf.set_font("Helvetica", "", 6)
     pdf.set_text_color(140, 140, 140)
     pdf.multi_cell(
