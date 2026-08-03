@@ -475,25 +475,25 @@ def bucket_monthly_returns(name, bucket, asset_df) -> pd.Series:
     return weighted_monthly_returns(w, 0.0, asset_df, label=f"{name}-{bucket}").dropna()
 
 
-def render_fs_better_asset_class_comparison(asset_df) -> None:
-    """Dedicated Four Seasons vs Better breakdown by shared asset-class bucket - fixed to this pair
-    specifically (not generalised to whichever portfolios happen to be selected elsewhere), covering:
-    allocation by bucket, which underlying funds/holdings make up each bucket, how each bucket's own
-    market exposure has evolved in isolation, and a buy-and-hold illustration of how that split would
-    have built up an example pot - kept clearly separate from the actual withdrawal-adjusted
-    simulation shown elsewhere on this page."""
-    names = ["Four Seasons", "Better"]
-    if not all(n in PORTFOLIOS for n in names):
+def render_asset_class_comparison(names, asset_df) -> None:
+    """Asset-class-bucket breakdown for WHICHEVER portfolios are currently selected (any number,
+    any registered portfolio - not fixed to a specific pair), covering: allocation by bucket, which
+    underlying funds/holdings make up each bucket, how each bucket's own market exposure has
+    evolved in isolation, and a buy-and-hold illustration of how that split would have built up an
+    example pot - kept clearly separate from the actual withdrawal-adjusted simulation shown
+    elsewhere on this page. Requires at least 2 portfolios to be a meaningful "comparison"."""
+    names = [n for n in names if n in PORTFOLIOS]
+    if len(names) < 2:
         return
 
-    st.subheader("Asset-class comparison: Aspen Four Seasons vs Mobius Better")
+    title = " vs ".join(display_name(n) for n in names)
+    st.subheader(f"Asset-class comparison: {title}")
     st.caption(
-        "Aspen Four Seasons and Mobius Better classify their holdings under different naming "
-        "conventions despite representing similar underlying exposures (for example, Four Seasons' "
-        "'Global Equities' corresponds to Better's 'Eq Gbl DM Novum Mgd Vol' and 'Eq Gbl DM Quality "
-        "Gross'). Both portfolios are therefore mapped onto a common set of asset-class buckets, "
-        "enabling a direct comparison of allocation, underlying holdings, and historical performance "
-        "by asset class."
+        "Different portfolios can classify their holdings under different naming conventions "
+        "despite representing similar underlying exposures (e.g. one portfolio's 'Global Equities' "
+        "corresponding to another's differently-named equity strategy funds). Every selected "
+        "portfolio is therefore mapped onto a common set of asset-class buckets, enabling a direct "
+        "comparison of allocation, underlying holdings, and historical performance by asset class."
     )
 
     group_weights = {name: comparison_group_weights(name) for name in names}
@@ -512,9 +512,9 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
     st.plotly_chart(fig_alloc, use_container_width=True, config={"displayModeBar": False})
     if any(w.get("Alternatives (hedge funds)", 0.0) > 0 for w in group_weights.values()):
         st.caption(
-            "The 'Alternatives (hedge funds)' bucket has no equivalent holding in the portfolio that "
-            "does not hold it, and is therefore shown as 0% rather than being allocated to an "
-            "unrelated bucket such as Commodities, which would misrepresent both portfolios."
+            "The 'Alternatives (hedge funds)' bucket has no equivalent holding in the portfolio(s) "
+            "that don't hold it, and is therefore shown as 0% rather than being allocated to an "
+            "unrelated bucket such as Commodities, which would misrepresent those portfolios."
         )
 
     st.markdown("**Underlying fund holdings by asset class**")
@@ -528,8 +528,10 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
                              "Weight": r["Weight"]})
         if not rows:
             continue
-        with st.expander(f"{grp} ({group_weights['Four Seasons'].get(grp, 0)*100:.2f}% Four Seasons, "
-                          f"{group_weights['Better'].get(grp, 0)*100:.2f}% Better)"):
+        weight_summary = ", ".join(
+            f"{group_weights[n].get(grp, 0) * 100:.2f}% {display_name(n)}" for n in names
+        )
+        with st.expander(f"{grp} ({weight_summary})"):
             st.dataframe(
                 pd.DataFrame(rows)[["Portfolio", "Holding", "Weight"]],
                 use_container_width=True, hide_index=True,
@@ -542,11 +544,10 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
         "The charts below show the growth of £100 invested in each asset-class bucket independently, "
         "based on unweighted, fee-free historical returns. This reflects underlying market "
         "performance only, and does not represent a simulated portfolio outcome. Where a bucket "
-        "comprises multiple holdings within a portfolio (for example, Better's Global Bonds), the "
-        "return shown reflects that portfolio's own internal weighting across those holdings, "
-        "rescaled to 100%."
+        "comprises multiple holdings within a portfolio, the return shown reflects that portfolio's "
+        "own internal weighting across those holdings, rescaled to 100%."
     )
-    cols = st.columns(2)
+    cols = st.columns(len(names))
     for col, name in zip(cols, names):
         with col:
             st.markdown(f"**{display_name(name)}**")
@@ -574,7 +575,7 @@ def render_fs_better_asset_class_comparison(asset_df) -> None:
         "monthly rebalancing to target weights, is presented separately later in this section."
     )
     example_pot = 500_000.0
-    cols2 = st.columns(2)
+    cols2 = st.columns(len(names))
     for col, name in zip(cols2, names):
         with col:
             st.markdown(f"**{display_name(name)}**")
@@ -602,9 +603,9 @@ def render_holdings_section(names, show_allocation_chart: bool = True) -> None:
     instead of one shared holdings block sitting between the two sections.
 
     show_allocation_chart=False skips the 'Asset allocation, like-for-like' bar chart - used for
-    Decumulation, where render_fs_better_asset_class_comparison already covers that same allocation
-    view (with the fund-level breakdown alongside it), so showing it here too would just duplicate
-    it further up the page."""
+    Decumulation, where render_asset_class_comparison already covers that same allocation view
+    (with the fund-level breakdown alongside it), so showing it here too would just duplicate it
+    further up the page."""
     names = ordered_names(names)
     if not names:
         st.subheader("What each portfolio holds")
@@ -1688,7 +1689,7 @@ if show_decum:
         render_holdings_section(ordered_names(results), show_allocation_chart=False)
         st.divider()
         st.markdown('<div id="sec-assetclass"></div>', unsafe_allow_html=True)
-        render_fs_better_asset_class_comparison(asset_df)
+        render_asset_class_comparison(ordered_names(results), asset_df)
         st.divider()
 
     st.markdown('<div id="sec-stats"></div>', unsafe_allow_html=True)
