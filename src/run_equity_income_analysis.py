@@ -52,9 +52,15 @@ def main():
     # step). This is a screening pass to find the CANDIDATE winner, not the final reported number -
     # the winning basket is re-run at full n_sims below (see TASK 16) before anything is quoted.
     SEARCH_N_SIMS = 300
+    # Diversification basis is SECTOR CHARACTERISTICS, not total-return correlation (direct
+    # feedback - two shares can show low historical correlation in a ~25-year sample by chance
+    # without being economically diversified at all). min_sectors=3 rules out any 3-share basket
+    # with two holdings from the same sector outright, however low their correlation happens to be.
+    sector_map = dict(zip(meta["Ticker"], meta["Sector"]))
     top_baskets = find_best_baskets(equity_df, cpi, profile, basket_size=3, top_n=5,
-                                     n_sims=SEARCH_N_SIMS)
-    print(f"(search run at n_sims={SEARCH_N_SIMS} for speed - re-verified at full n_sims below)")
+                                     n_sims=SEARCH_N_SIMS, sector_map=sector_map, min_sectors=3)
+    print(f"(search run at n_sims={SEARCH_N_SIMS} for speed - re-verified at full n_sims below; "
+          f"restricted to baskets spanning 3 distinct sectors)")
     print(top_baskets.to_string(index=False))
 
     best_basket = top_baskets.iloc[0]["Basket"]

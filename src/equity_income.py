@@ -195,21 +195,38 @@ def evaluate_basket(name: str, weights: dict, equity_df: pd.DataFrame, cpi_serie
 def find_best_baskets(equity_df: pd.DataFrame, cpi_series: pd.Series, profile: ClientProfile,
                        basket_size: int = 3, fee: float = DEFAULT_SHARE_FEE,
                        method: str = "stationary_block", n_sims: int = 2000, seed: int = 42,
-                       top_n: int = 5) -> pd.DataFrame:
+                       top_n: int = 5, sector_map: dict = None,
+                       min_sectors: int = None) -> pd.DataFrame:
     """Task 14: systematically search every equal-weight combination of `basket_size` shares (not
     just a hand-picked pair) and rank them by actual Monte Carlo probability of ruin - the true
-    objective - rather than by a correlation proxy alone. Correlation is still a useful lens
-    (see share_correlation_matrix) for understanding WHY a basket works, but this answers the
-    actual question task 14 asks: which combinations perform best.
+    objective - rather than by a correlation proxy alone.
 
-    Brute-force over all C(n, basket_size) combinations - fine for the ~10-share universe this
-    project currently has; would need a smarter search (e.g. greedy forward selection) if the
-    real Bloomberg universe (task 12) turns out to have hundreds of candidates."""
+    Diversification basis: per direct feedback, genuine diversification for this task should be
+    judged on SECTOR CHARACTERISTICS (does a basket actually span different parts of the economy -
+    a miner, a utility, a bank), not on statistical total-return correlation alone (two shares can
+    show low correlation in a noisy ~25-year sample purely by chance, without being economically
+    diversified at all - see share_correlation_matrix's own docstring, which already flagged this
+    exact risk). Pass `sector_map` (ticker -> sector, e.g. from load_share_metadata) to have every
+    candidate basket's sector spread reported alongside its Monte Carlo result, and `min_sectors`
+    to exclude baskets that don't span at least that many DISTINCT sectors from consideration
+    entirely - e.g. min_sectors=basket_size rules out any basket with two holdings from the same
+    sector, however low their historical correlation happened to be. Correlation (see
+    share_correlation_matrix) is still worth checking alongside this - it explains WHY a
+    sector-diverse basket behaves the way it does - but sector spread is the basis for whether a
+    basket counts as diversified in the first place.
+
+    Brute-force over all C(n, basket_size) combinations - fine for the ~10-20-share universe this
+    project has; would need a smarter search (e.g. greedy forward selection) if the real Bloomberg
+    universe (task 12) turns out to have hundreds of candidates."""
     tickers = list(equity_df.columns)
     for t in tickers:
         AC[t] = t
     rows = []
     for combo in combinations(tickers, basket_size):
+        if sector_map is not None:
+            sectors = sorted({sector_map[t] for t in combo if t in sector_map})
+            if min_sectors is not None and len(sectors) < min_sectors:
+                continue
         weights = equal_weight_basket(list(combo))
         w = pd.Series(weights)
         label = " + ".join(combo)
@@ -217,13 +234,17 @@ def find_best_baskets(equity_df: pd.DataFrame, cpi_series: pd.Series, profile: C
                               seed=seed, custom_weights=w, custom_fee=fee)
         s = res.summary()
         dd = downside_stats(label, equity_df, custom_weights=w, custom_fee=fee)
-        rows.append({
+        row = {
             "Basket": label,
             "Probability of ruin": s["Probability of ruin"],
             "Median legacy": s["Median legacy"],
             "Max DD": dd["maxdd"],
             "Average DD": dd["avgdd"],
-        })
+        }
+        if sector_map is not None:
+            row["Sectors"] = ", ".join(sectors)
+            row["N sectors"] = len(sectors)
+        rows.append(row)
     return pd.DataFrame(rows).sort_values("Probability of ruin").head(top_n).reset_index(drop=True)
 
 
