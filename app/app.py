@@ -1671,11 +1671,18 @@ if show_decum:
             ordered_names(results), results, profile_kwargs, asset_df, cpi,
             show_pot_only_irr=True,
         )
+        # Filename built from whichever competitor is actually being compared, not hardcoded - a
+        # future user comparing Mobius against a different provider gets a correctly-named file,
+        # not one still saying "Aspen" regardless of what's on the page.
+        _pdf_all_names = list(accum_results.keys()) + [n for n in results if n not in accum_results]
+        _pdf_competitor = providers_label(_pdf_all_names, owner="Competitor")
+        _pdf_slug = "".join(c if c.isalnum() else "_" for c in _pdf_competitor).strip("_") if _pdf_competitor else ""
+        _pdf_filename = f"Mobius_Wealth_vs_{_pdf_slug}_summary.pdf" if _pdf_slug else "Mobius_Wealth_summary.pdf"
         st.download_button(
             "Download one-page summary (PDF)",
             data=build_summary_pdf(accum_results, results, accum_profile_kwargs, profile_kwargs, asset_df,
                                     cpi, age, pot, spend, horizon, wr),
-            file_name="Mobius_Wealth_vs_Aspen_Advisers_summary.pdf",
+            file_name=_pdf_filename,
             mime="application/pdf",
             help="A one-page takeaway covering both the Accumulation and Decumulation comparisons above - "
                  "hand it to the client or attach it to a follow-up email.",
@@ -2037,10 +2044,10 @@ if show_accum or show_decum:
             )
             st.caption(
                 "Technical detail: rescales each chosen portfolio to hit a target TOTAL equity weight (all "
-                "of that portfolio's equity/growth holdings combined - e.g. Global + EM equities for Aspen's "
-                "funds, or Mobius Better's own quality/managed-vol/EM equity sleeves), preserving the relative "
-                "split within the equity sleeve and within the rest of the portfolio, then re-runs the full "
-                "simulation at each point."
+                "of that portfolio's equity/growth holdings combined - e.g. plain Global + EM equities, or "
+                "a portfolio's own factor-labelled equity sleeves such as quality/managed-vol/EM), "
+                "preserving the relative split within the equity sleeve and within the rest of the "
+                "portfolio, then re-runs the full simulation at each point."
             )
             run_sweep = st.checkbox(
                 "Test different share-vs-safer-assets mixes (re-runs each portfolio 9 times - slower)",
