@@ -893,10 +893,9 @@ def build_summary_pdf(accum_results: dict, decum_results: dict, accum_profile_kw
     pdf.multi_cell(
         0, 3.2,
         "Mobius Life Limited is authorised by the Prudential Regulation Authority and regulated by the "
-        "Financial Conduct Authority and the Prudential Regulation Authority (Mobius Life Administration "
-        "Services is not authorised or regulated); Mobius Life Limited (Registered No. 3104978) and "
-        "Mobius Life Administration Services (Registered No. 5754821) are registered in England and "
-        "Wales at: 2nd Floor, 2 Copthall Avenue, London, EC2R 7DA.",
+        "Financial Conduct Authority and the Prudential Regulation Authority. Mobius Life Limited "
+        "(Registered No. 3104978) is registered in England and Wales at: 2nd Floor, 2 Copthall Avenue, "
+        "London, EC2R 7DA.",
     )
     return bytes(pdf.output())
 
