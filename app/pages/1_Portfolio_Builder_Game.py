@@ -31,7 +31,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
@@ -160,7 +162,8 @@ st.markdown(
 GAME_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "game_state"
 GAME_STATE_DIR.mkdir(exist_ok=True)
 LEADERBOARD_CSV = GAME_STATE_DIR / "leaderboard.csv"
-LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin", "Asset classes used", "Allocation"]
+LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin", "Median annual return %",
+                        "Asset classes used", "Allocation"]
 
 SUSPENSE_MESSAGES = [
     "🎲 Testing your portfolio against 2,000 possible futures...",
@@ -181,12 +184,29 @@ cpi = load_cpi(asset_df)
 
 
 @st.cache_data(show_spinner=False)
-def _benchmark_prob_ruin(name, _asset_df, _cpi, profile):
+def _benchmark_result(name, _asset_df, _cpi, profile):
     """Cached per (portfolio name, profile) - independent of any player's own allocation, so every
     team playing with the same host-set client profile shares one cached run instead of
-    re-simulating Four Seasons/Better on every single reveal click."""
+    re-simulating Four Seasons/Better on every single reveal click. Returns the full SimResult
+    (not just prob_ruin) so its simulated paths can feed the fan chart too."""
     return run_simulation(name, _asset_df, _cpi, profile, method="stationary_block",
-                           n_sims=2000, seed=42).prob_ruin
+                           n_sims=2000, seed=42)
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _median_cagr(paths, starting_pot, horizon_years):
+    """Median (typical) simulated annualised return, derived from the median final pot value vs
+    the starting pot - the same 'typical outcome' concept as the median line on a fan chart,
+    collapsed into one headline % figure."""
+    median_final = float(np.median(paths[:, -1]))
+    if starting_pot <= 0 or horizon_years <= 0:
+        return 0.0
+    return (median_final / starting_pot) ** (1.0 / horizon_years) - 1.0
 
 
 def _load_leaderboard() -> pd.DataFrame:
@@ -432,13 +452,17 @@ if reveal:
                              n_sims=2000, seed=42, custom_weights=weights, custom_fee=custom_fee)
     suspense_slot.empty()
 
+    median_return = _median_cagr(result.paths, float(pot), horizon)
     st.session_state[result_key] = result.prob_ruin
+    st.session_state[f"game_return_{granularity}"] = median_return
+    st.session_state[f"game_paths_{granularity}"] = result.paths
     st.session_state[f"game_badges_{granularity}"] = _badges(weights, custom_fee, selected_count, max_classes)
     _append_leaderboard({
         "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "Team": team_name.strip(),
         "Mode": granularity,
         "Probability of ruin": round(result.prob_ruin * 100, 2),
+        "Median annual return %": round(median_return * 100, 2),
         "Asset classes used": selected_count,
         "Allocation": allocation_str,
     })
@@ -460,6 +484,15 @@ if st.session_state.get(result_key) is not None:
     if prob_ruin < 0.05:
         st.balloons()
 
+    median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
+    return_col1, return_col2 = st.columns(2)
+    with return_col1:
+        _stat_card("Median annual return", f"{median_return * 100:+.1f}%",
+                   COLOR_GOOD if median_return >= 0 else COLOR_BAD)
+    with return_col2:
+        median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
+        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}")
+
     badges = st.session_state.get(f"game_badges_{granularity}", [])
     if badges:
         st.markdown(
@@ -470,8 +503,10 @@ if st.session_state.get(result_key) is not None:
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
-    four_seasons_ruin = _benchmark_prob_ruin("Four Seasons", asset_df, cpi, profile)
-    better_ruin = _benchmark_prob_ruin("Better", asset_df, cpi, profile)
+    four_seasons_result = _benchmark_result("Four Seasons", asset_df, cpi, profile)
+    better_result = _benchmark_result("Better", asset_df, cpi, profile)
+    four_seasons_ruin = four_seasons_result.prob_ruin
+    better_ruin = better_result.prob_ruin
 
     st.markdown("#### ⚔️ How you compare")
     contenders = [
@@ -499,6 +534,33 @@ if st.session_state.get(result_key) is not None:
         st.info("👍 You beat Aspen Four Seasons, but Mobius Better still edges you out.")
     else:
         st.info("📉 Both benchmark portfolios currently beat you - room to improve.")
+
+    st.markdown("#### 📊 How your pot could evolve - everyone, side by side")
+    st.caption("Interactive - hover for exact values, drag to zoom. The bold line is each portfolio's "
+               "median (typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
+    fan = go.Figure()
+    fan_series = [
+        ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
+         st.session_state[f"game_paths_{granularity}"]),
+        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), "#6C5CE7",
+         four_seasons_result.paths),
+        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#00B4D8",
+         better_result.paths),
+    ]
+    years_axis = np.arange(horizon + 1)
+    for label, fan_color, paths in fan_series:
+        q25, q50, q75 = (np.percentile(paths, q, axis=0) for q in (25, 50, 75))
+        fan.add_trace(go.Scatter(x=years_axis, y=q75, line=dict(width=0), showlegend=False, hoverinfo="skip"))
+        fan.add_trace(go.Scatter(x=years_axis, y=q25, fill="tonexty", line=dict(width=0), showlegend=False,
+                                  hoverinfo="skip", fillcolor=_hex_to_rgba(fan_color, 0.18)))
+        fan.add_trace(go.Scatter(x=years_axis, y=q50, mode="lines", name=label,
+                                  line=dict(width=3, color=fan_color)))
+    fan.update_layout(
+        xaxis_title="Year", yaxis_title="Portfolio value (£)", height=420,
+        margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
+        legend=dict(orientation="h", y=-0.15),
+    )
+    st.plotly_chart(fan, use_container_width=True)
 
     if st.button("🔁 Build another portfolio"):
         del st.session_state[result_key]
