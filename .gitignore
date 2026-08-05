@@ -1,6 +1,9 @@
 # Build artifacts - regenerate via src/build_*.py, large, not needed to run the app
 output/
 
+# Portfolio Builder Game runtime state (leaderboard) - resets per game session, not source data
+game_state/
+
 # Python
 __pycache__/
 *.pyc
