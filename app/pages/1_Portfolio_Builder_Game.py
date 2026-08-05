@@ -16,6 +16,11 @@ app URL. The leaderboard is therefore persisted to a small CSV on disk (game_sta
 gitignored - it's session runtime state, not source data) rather than st.session_state, which is
 per-browser-tab and would leave every other team's screen blank. This is a lightweight, good-enough
 store for a live event with a handful of teams - not built to survive concurrent writes at scale.
+
+Styling is intentionally more playful than the main comparison tool (gradient hero banner, big
+animated reveal card, medal leaderboard) - this page is a game, not a client-facing pitch deck -
+but reuses the main app's own probability-of-ruin colour coding (green/amber/red) so the one number
+that actually matters still reads the same way in both places.
 """
 import sys
 from datetime import datetime
@@ -30,6 +35,105 @@ from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
 from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR
 
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
+
+# Same risk colours as the main app's probability-of-ruin cards (app.py's ruin_color logic) -
+# consistent meaning across both pages, just wrapped in more decorative packaging here.
+COLOR_GOOD = "#0ca30c"
+COLOR_WARN = "#c98500"
+COLOR_BAD = "#d03b3b"
+
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap');
+
+    .game-hero {
+        background: linear-gradient(135deg, #6C5CE7 0%, #00B4D8 55%, #0ca30c 120%);
+        border-radius: 18px;
+        padding: 1.6rem 2rem;
+        margin-bottom: 1.2rem;
+        box-shadow: 0 8px 24px rgba(76, 41, 196, 0.25);
+    }
+    .game-hero h1 {
+        font-family: 'Baloo 2', sans-serif;
+        color: white;
+        font-size: 2.1rem;
+        margin: 0 0 0.35rem 0;
+    }
+    .game-hero p {
+        color: rgba(255,255,255,0.92);
+        font-size: 0.98rem;
+        margin: 0;
+        max-width: 60rem;
+    }
+    .stat-card {
+        border: 1px solid rgba(128,128,128,0.25);
+        border-radius: 14px;
+        padding: 0.85rem 1rem;
+        text-align: center;
+        background: rgba(128,128,128,0.06);
+        transition: transform 0.15s ease;
+    }
+    .stat-card:hover { transform: translateY(-2px); }
+    .stat-card .label {
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.05em; color: #898781;
+    }
+    .stat-card .value {
+        font-size: 1.6rem; font-weight: 800; line-height: 1.3;
+    }
+    div[data-testid="stButton"] > button[kind="primary"] {
+        font-family: 'Baloo 2', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        border: none;
+        padding: 0.7rem 0;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        transform: scale(1.015);
+        box-shadow: 0 6px 18px rgba(108, 92, 231, 0.4);
+    }
+    @keyframes popIn {
+        0% { transform: scale(0.85); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    .result-card {
+        border-radius: 20px;
+        padding: 1.8rem 2rem;
+        text-align: center;
+        color: white;
+        animation: popIn 0.35s ease-out;
+        box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+        margin-bottom: 1rem;
+    }
+    .result-card .big-number {
+        font-family: 'Baloo 2', sans-serif;
+        font-size: 3.4rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .result-card .tagline {
+        font-size: 1.05rem;
+        opacity: 0.95;
+        margin-top: 0.3rem;
+    }
+    .battle-card {
+        border-radius: 14px;
+        padding: 1rem;
+        text-align: center;
+        border: 2px solid rgba(128,128,128,0.2);
+    }
+    .battle-card.winner { border-color: #0ca30c; background: rgba(12,163,12,0.08); }
+    .battle-card .name { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.03em; color: #898781; }
+    .battle-card .pct { font-size: 1.7rem; font-weight: 800; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 GAME_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "game_state"
 GAME_STATE_DIR.mkdir(exist_ok=True)
@@ -70,6 +174,26 @@ def _append_leaderboard(row: dict):
     df.to_csv(LEADERBOARD_CSV, index=False)
 
 
+def _stat_card(label, value, color=None):
+    color_style = f"color:{color};" if color else ""
+    st.markdown(
+        f"<div class='stat-card'><div class='label'>{label}</div>"
+        f"<div class='value' style='{color_style}'>{value}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _tier(prob_ruin):
+    if prob_ruin < 0.05:
+        return "Excellent", "🏆", COLOR_GOOD, "Retirement royalty. This plan just about never runs dry."
+    elif prob_ruin < 0.15:
+        return "Good", "✅", COLOR_GOOD, "A solid, sensible plan. Nice work."
+    elif prob_ruin < 0.30:
+        return "Risky", "⚠️", COLOR_WARN, "Living a little dangerously - some futures don't end well."
+    else:
+        return "High risk", "💀", COLOR_BAD, "Back to the drawing board - this pot runs out a lot."
+
+
 # The Mobius fund store's own "Asset Class Sub-category" list (per the platform's filter panel),
 # each mapped to the underlying long-history series in data/asset_class_returns.csv that best
 # represents it - a category mapped to more than one series (e.g. "Equity" -> developed + emerging)
@@ -100,15 +224,17 @@ FUND_STORE_MAP: dict[str, list[str] | None] = {
 AVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is not None]
 UNAVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is None]
 
-st.title("🎮 Build Your Own Portfolio")
-st.caption(
-    "Assign weightings (and fees) across asset classes, then find out how likely your portfolio is "
-    "to run out of money in retirement. Runs on the exact same simulation engine and market data as "
-    "the main Mobius Wealth comparison tool - nothing here is a simplified stand-in. Play on your "
-    "own device - everyone's score lands on the shared leaderboard at the bottom of the page."
+st.markdown(
+    "<div class='game-hero'><h1>🎮 Build Your Own Portfolio</h1>"
+    "<p>Assign weightings (and fees) across asset classes, then find out how likely your portfolio "
+    "is to run out of money in retirement. Runs on the exact same simulation engine and market data "
+    "as the main Mobius Wealth comparison tool - nothing here is a simplified stand-in. Play on your "
+    "own device - everyone's score lands on the shared leaderboard at the bottom of the page. 🏁</p>"
+    "</div>",
+    unsafe_allow_html=True,
 )
 
-with st.expander("Game setup (host controls)", expanded=False):
+with st.expander("⚙️ Game setup (host controls)", expanded=False):
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         age = st.number_input("Starting age", 40, 90, 65)
@@ -129,7 +255,7 @@ with st.expander("Game setup (host controls)", expanded=False):
         st.rerun()
 
 granularity = st.radio(
-    "Asset classes",
+    "🧩 Asset classes",
     ["Fund store categories", "Individual building blocks"],
     horizontal=True,
     help="Fund store categories: the same Asset Class Sub-category list as the Mobius fund store "
@@ -147,10 +273,10 @@ if editor_key not in st.session_state:
         "Fee % pa": [0.10] * len(labels),
     })
 
-team_name = st.text_input("Team / player name", key="team_name",
+team_name = st.text_input("🏷️ Team / player name", key="team_name",
                            help="Shown on the leaderboard - pick something your team will recognise.")
 
-st.markdown("#### Your allocation")
+st.markdown("#### 🏗️ Your allocation")
 st.caption("Set a weight for each asset class you want to hold (they must add up to 100%), and the "
            "annual fee you're assuming for each. Leave a row at 0% to leave it out entirely.")
 edited = st.data_editor(
@@ -169,7 +295,7 @@ st.session_state[editor_key] = edited
 
 if is_fund_store and UNAVAILABLE_CATEGORIES:
     st.caption(
-        "Not selectable yet (no return data in the model): " + ", ".join(UNAVAILABLE_CATEGORIES)
+        "🚧 Not selectable yet (no return data in the model): " + ", ".join(UNAVAILABLE_CATEGORIES)
         + " — these are on the fund store's own asset-class list but don't have historical return "
           "series behind them here, so they're left out rather than guessed at."
     )
@@ -181,14 +307,29 @@ count_ok = 0 < selected_count <= max_classes
 name_ok = bool(team_name.strip())
 can_reveal = weights_ok and count_ok and name_ok
 
-progress_col, count_col, name_col = st.columns([2, 1, 1])
+if total_weight <= 0:
+    build_stage = "⬜ Nothing built yet"
+elif total_weight < 50:
+    build_stage = "🧱 Just getting started..."
+elif total_weight < 100:
+    build_stage = "🏗️ Halfway there..."
+elif weights_ok:
+    build_stage = "✅ Ready to build!"
+else:
+    build_stage = "⚠️ Over 100% - trim something back"
+
+progress_col, count_col, name_col = st.columns(3)
 with progress_col:
     st.progress(min(total_weight / 100.0, 1.0))
-    st.caption(f"Total allocated: {total_weight:.1f}% / 100%")
+    _stat_card("Total allocated", f"{total_weight:.1f}% / 100%",
+               COLOR_GOOD if weights_ok else None)
+    st.caption(build_stage)
 with count_col:
-    st.metric("Asset classes used", f"{selected_count} / {max_classes}")
+    _stat_card("Asset classes used", f"{selected_count} / {max_classes}",
+               COLOR_GOOD if count_ok else COLOR_BAD if selected_count else None)
 with name_col:
-    st.metric("Team name set", "Yes" if name_ok else "No")
+    _stat_card("Team name set", "Yes ✅" if name_ok else "No ❌",
+               COLOR_GOOD if name_ok else COLOR_BAD)
 
 if not weights_ok:
     st.warning("Your weights need to add up to 100% before you can build your portfolio.")
@@ -235,16 +376,17 @@ if reveal:
 if st.session_state.get(result_key) is not None:
     prob_ruin = st.session_state[result_key]
     st.divider()
-    if prob_ruin < 0.05:
-        tier, emoji = "Excellent", "🏆"
-    elif prob_ruin < 0.15:
-        tier, emoji = "Good", "✅"
-    elif prob_ruin < 0.30:
-        tier, emoji = "Risky", "⚠️"
-    else:
-        tier, emoji = "High risk", "💀"
-    st.markdown(f"## {emoji} Probability of ruin: **{prob_ruin * 100:.1f}%**")
-    st.markdown(f"### Verdict: {tier}")
+    tier, emoji, color, tagline = _tier(prob_ruin)
+    st.markdown(
+        f"<div class='result-card' style='background:linear-gradient(135deg, {color}, {color}cc);'>"
+        f"<div style='font-size:0.9rem; font-weight:700; text-transform:uppercase; "
+        f"letter-spacing:0.06em; opacity:0.9;'>{emoji} {tier}</div>"
+        f"<div class='big-number'>{prob_ruin * 100:.1f}%</div>"
+        f"<div style='font-size:0.85rem; opacity:0.85;'>probability of ruin</div>"
+        f"<div class='tagline'>{tagline}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
     if prob_ruin < 0.05:
         st.balloons()
 
@@ -253,23 +395,34 @@ if st.session_state.get(result_key) is not None:
     four_seasons_ruin = _benchmark_prob_ruin("Four Seasons", asset_df, cpi, profile)
     better_ruin = _benchmark_prob_ruin("Better", asset_df, cpi, profile)
 
-    st.markdown("#### How you compare")
-    bcol1, bcol2, bcol3 = st.columns(3)
-    bcol1.metric("Your portfolio", f"{prob_ruin * 100:.1f}%")
-    bcol2.metric(PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"),
-                 f"{four_seasons_ruin * 100:.1f}%")
-    bcol3.metric(PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"),
-                 f"{better_ruin * 100:.1f}%")
+    st.markdown("#### ⚔️ How you compare")
+    contenders = [
+        ("You", prob_ruin),
+        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), four_seasons_ruin),
+        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), better_ruin),
+    ]
+    best_ruin = min(p for _, p in contenders)
+    bcols = st.columns(3)
+    for col, (label, p) in zip(bcols, contenders):
+        with col:
+            is_winner = p == best_ruin
+            crown = "👑 " if is_winner else ""
+            st.markdown(
+                f"<div class='battle-card{' winner' if is_winner else ''}'>"
+                f"<div class='name'>{crown}{label}</div>"
+                f"<div class='pct'>{p * 100:.1f}%</div></div>",
+                unsafe_allow_html=True,
+            )
     beat_fs = prob_ruin < four_seasons_ruin
     beat_better = prob_ruin < better_ruin
     if beat_better:
-        st.success("You beat Mobius Better - the tool's own most diversified construction. Impressive.")
+        st.success("🎉 You beat Mobius Better - the tool's own most diversified construction. Impressive.")
     elif beat_fs:
-        st.info("You beat Aspen Four Seasons, but Mobius Better still edges you out.")
+        st.info("👍 You beat Aspen Four Seasons, but Mobius Better still edges you out.")
     else:
-        st.info("Both benchmark portfolios currently beat you - room to improve.")
+        st.info("📉 Both benchmark portfolios currently beat you - room to improve.")
 
-    if st.button("Build another portfolio"):
+    if st.button("🔁 Build another portfolio"):
         del st.session_state[result_key]
         st.rerun()
 
@@ -282,6 +435,9 @@ if leaderboard.empty:
     st.caption("No scores yet - be the first to build a portfolio.")
 else:
     ranked = leaderboard.sort_values("Probability of ruin").reset_index(drop=True)
-    ranked.index = ranked.index + 1
-    ranked.index.name = "Rank"
-    st.dataframe(ranked, use_container_width=True)
+    medals = ["🥇", "🥈", "🥉"]
+    ranked.insert(0, "Rank", [medals[i] if i < 3 else str(i + 1) for i in range(len(ranked))])
+    current = team_name.strip().lower()
+    if current:
+        ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
+    st.dataframe(ranked, hide_index=True, use_container_width=True)
