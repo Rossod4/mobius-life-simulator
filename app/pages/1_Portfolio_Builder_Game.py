@@ -22,6 +22,8 @@ animated reveal card, medal leaderboard) - this page is a game, not a client-fac
 but reuses the main app's own probability-of-ruin colour coding (green/amber/red) so the one number
 that actually matters still reads the same way in both places.
 """
+from __future__ import annotations
+
 import sys
 from datetime import datetime
 from pathlib import Path
