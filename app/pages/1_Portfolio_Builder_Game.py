@@ -25,6 +25,7 @@ that actually matters still reads the same way in both places.
 from __future__ import annotations
 
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -34,7 +35,7 @@ import pandas as pd
 import streamlit as st
 
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
-from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR
+from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES
 
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
 
@@ -132,6 +133,25 @@ st.markdown(
     .battle-card .name { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
         letter-spacing: 0.03em; color: #898781; }
     .battle-card .pct { font-size: 1.7rem; font-weight: 800; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;
+        margin: 0.75rem 0 1rem 0; }
+    .badge-pill {
+        font-family: 'Baloo 2', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 700;
+        padding: 0.35rem 0.9rem;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        color: white;
+        box-shadow: 0 3px 10px rgba(108, 92, 231, 0.3);
+    }
+    .suspense-text {
+        text-align: center;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #6C5CE7;
+        padding: 1rem 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -140,7 +160,14 @@ st.markdown(
 GAME_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "game_state"
 GAME_STATE_DIR.mkdir(exist_ok=True)
 LEADERBOARD_CSV = GAME_STATE_DIR / "leaderboard.csv"
-LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin", "Asset classes used"]
+LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin", "Asset classes used", "Allocation"]
+
+SUSPENSE_MESSAGES = [
+    "🎲 Testing your portfolio against 2,000 possible futures...",
+    "📉 Simulating market crashes...",
+    "📈 Simulating bull runs...",
+    "🧮 Crunching the numbers...",
+]
 
 
 @st.cache_data(show_spinner=False)
@@ -194,6 +221,24 @@ def _tier(prob_ruin):
         return "Risky", "⚠️", COLOR_WARN, "Living a little dangerously - some futures don't end well."
     else:
         return "High risk", "💀", COLOR_BAD, "Back to the drawing board - this pot runs out a lot."
+
+
+def _badges(weights, custom_fee, selected_count, max_classes):
+    """Flair tags based on HOW a portfolio was built, not the score - separate from the tier
+    verdict (which is purely about the outcome), these reward specific construction choices."""
+    equity_weight = float(weights[weights.index.isin(EQUITY_CLASSES)].sum())
+    tags = []
+    if equity_weight >= 0.8:
+        tags.append("🎲 Risk Taker")
+    elif equity_weight <= 0.2:
+        tags.append("🛡️ Ultra Safe")
+    elif 0.35 <= equity_weight <= 0.65:
+        tags.append("⚖️ Balanced")
+    if custom_fee <= 0.0015:
+        tags.append("💰 Fee Hawk")
+    if selected_count == max_classes:
+        tags.append("🌐 Diversifier")
+    return tags
 
 
 # The Mobius fund store's own "Asset Class Sub-category" list (per the platform's filter panel),
@@ -250,6 +295,11 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
         "Max number of asset classes a player can use", 1, 26, 6,
         help="Forces harder trade-offs instead of just spreading weight across everything on offer.",
     )
+    max_fee_pct = st.number_input(
+        "Max weighted fee allowed (% pa)", 0.0, 3.0, 0.20, step=0.01,
+        help="A second constraint alongside the asset-class cap - forces a genuine cost-vs-"
+             "diversification trade-off instead of just picking the priciest option everywhere.",
+    )
     st.divider()
     st.caption(f"Leaderboard has {len(_load_leaderboard())} entries.")
     if st.button("🗑️ Clear leaderboard (start a new game)"):
@@ -304,10 +354,12 @@ if is_fund_store and UNAVAILABLE_CATEGORIES:
 
 total_weight = float(edited["Weight %"].sum())
 selected_count = int((edited["Weight %"] > 0).sum())
+live_fee_pct = float((edited["Weight %"] * edited["Fee % pa"]).sum() / total_weight) if total_weight > 0 else 0.0
 weights_ok = abs(total_weight - 100.0) < 0.51
 count_ok = 0 < selected_count <= max_classes
+fee_ok = live_fee_pct <= max_fee_pct + 1e-9
 name_ok = bool(team_name.strip())
-can_reveal = weights_ok and count_ok and name_ok
+can_reveal = weights_ok and count_ok and fee_ok and name_ok
 
 if total_weight <= 0:
     build_stage = "⬜ Nothing built yet"
@@ -320,15 +372,18 @@ elif weights_ok:
 else:
     build_stage = "⚠️ Over 100% - trim something back"
 
-progress_col, count_col, name_col = st.columns(3)
+st.progress(min(total_weight / 100.0, 1.0))
+st.caption(build_stage)
+progress_col, count_col, fee_col, name_col = st.columns(4)
 with progress_col:
-    st.progress(min(total_weight / 100.0, 1.0))
     _stat_card("Total allocated", f"{total_weight:.1f}% / 100%",
                COLOR_GOOD if weights_ok else None)
-    st.caption(build_stage)
 with count_col:
     _stat_card("Asset classes used", f"{selected_count} / {max_classes}",
                COLOR_GOOD if count_ok else COLOR_BAD if selected_count else None)
+with fee_col:
+    _stat_card("Weighted fee", f"{live_fee_pct:.2f}% / {max_fee_pct:.2f}%",
+               COLOR_GOOD if fee_ok else COLOR_BAD if total_weight > 0 else None)
 with name_col:
     _stat_card("Team name set", "Yes ✅" if name_ok else "No ❌",
                COLOR_GOOD if name_ok else COLOR_BAD)
@@ -338,6 +393,9 @@ if not weights_ok:
 if not count_ok and selected_count > 0:
     st.warning(f"You've used {selected_count} asset classes - the limit for this game is {max_classes}. "
                f"Zero out some rows to get under the limit.")
+if not fee_ok and total_weight > 0:
+    st.warning(f"Your weighted fee is {live_fee_pct:.2f}% pa - the limit for this game is "
+               f"{max_fee_pct:.2f}% pa. Swap in some cheaper asset classes.")
 if not name_ok:
     st.warning("Enter a team / player name above so your score can go on the leaderboard.")
 
@@ -348,6 +406,7 @@ result_key = f"game_result_{granularity}"
 
 if reveal:
     rows = edited[edited["Weight %"] > 0]
+    allocation_str = ", ".join(f"{r['Asset class']} {r['Weight %']:.0f}%" for _, r in rows.iterrows())
     ac_vals, w_vals, fee_vals = [], [], []
     for _, r in rows.iterrows():
         constituents = FUND_STORE_MAP[r["Asset class"]] if is_fund_store else [r["Asset class"]]
@@ -362,17 +421,26 @@ if reveal:
     fees = pd.Series(fee_vals, index=ac_vals, dtype=float).groupby(level=0).mean() / 100.0
     custom_fee = float((weights * fees.reindex(weights.index)).sum())
 
+    suspense_slot = st.empty()
+    for msg in SUSPENSE_MESSAGES:
+        suspense_slot.markdown(f"<div class='suspense-text'>{msg}</div>", unsafe_allow_html=True)
+        time.sleep(0.45)
+
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
     result = run_simulation("Your portfolio", asset_df, cpi, profile, method="stationary_block",
                              n_sims=2000, seed=42, custom_weights=weights, custom_fee=custom_fee)
+    suspense_slot.empty()
+
     st.session_state[result_key] = result.prob_ruin
+    st.session_state[f"game_badges_{granularity}"] = _badges(weights, custom_fee, selected_count, max_classes)
     _append_leaderboard({
         "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "Team": team_name.strip(),
         "Mode": granularity,
         "Probability of ruin": round(result.prob_ruin * 100, 2),
         "Asset classes used": selected_count,
+        "Allocation": allocation_str,
     })
 
 if st.session_state.get(result_key) is not None:
@@ -391,6 +459,14 @@ if st.session_state.get(result_key) is not None:
     )
     if prob_ruin < 0.05:
         st.balloons()
+
+    badges = st.session_state.get(f"game_badges_{granularity}", [])
+    if badges:
+        st.markdown(
+            "<div class='badge-row'>" + "".join(f"<span class='badge-pill'>{b}</span>" for b in badges)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
@@ -442,4 +518,13 @@ else:
     current = team_name.strip().lower()
     if current:
         ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
-    st.dataframe(ranked, hide_index=True, use_container_width=True)
+    st.dataframe(ranked.drop(columns=["Allocation"], errors="ignore"), hide_index=True, use_container_width=True)
+
+    if st.button("🏅 Reveal the winning allocation"):
+        winner = ranked.iloc[0]
+        alloc = winner.get("Allocation")
+        if isinstance(alloc, str) and alloc.strip():
+            st.info(f"**{winner['Team']}** ({winner['Probability of ruin']:.1f}% probability of ruin) "
+                    f"built: {alloc}")
+        else:
+            st.caption("No allocation recorded for the current #1 (played before this feature was added).")
