@@ -53,23 +53,67 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap');
 
     .game-hero {
+        position: relative;
+        overflow: hidden;
         background: linear-gradient(135deg, #6C5CE7 0%, #00B4D8 55%, #0ca30c 120%);
         border-radius: 18px;
         padding: 1.6rem 2rem;
         margin-bottom: 1.2rem;
         box-shadow: 0 8px 24px rgba(76, 41, 196, 0.25);
     }
+    .game-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+            radial-gradient(rgba(255,255,255,0.16) 2px, transparent 2px),
+            radial-gradient(rgba(255,255,255,0.12) 2px, transparent 2px);
+        background-size: 42px 42px;
+        background-position: 0 0, 21px 21px;
+        pointer-events: none;
+    }
     .game-hero h1 {
+        position: relative;
         font-family: 'Baloo 2', sans-serif;
         color: white;
         font-size: 2.1rem;
         margin: 0 0 0.35rem 0;
     }
+    .game-hero h1 .wobble { display: inline-block; animation: wobble 2.4s ease-in-out infinite; }
+    @keyframes wobble {
+        0%, 100% { transform: rotate(0deg); }
+        25% { transform: rotate(-8deg); }
+        75% { transform: rotate(8deg); }
+    }
     .game-hero p {
+        position: relative;
         color: rgba(255,255,255,0.92);
         font-size: 0.98rem;
         margin: 0;
         max-width: 60rem;
+    }
+    .howto-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.2rem; }
+    .howto-card {
+        flex: 1 1 200px;
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        background: rgba(108, 92, 231, 0.06);
+        border: 1px solid rgba(108, 92, 231, 0.18);
+    }
+    .howto-card .num {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.6rem; height: 1.6rem; border-radius: 50%;
+        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        color: white; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 0.85rem;
+        margin-bottom: 0.4rem;
+    }
+    .howto-card .txt { font-size: 0.85rem; color: inherit; opacity: 0.9; }
+    .stats-banner {
+        display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center;
+        border-radius: 14px; padding: 0.75rem 1rem; margin-bottom: 1.2rem;
+        background: linear-gradient(90deg, rgba(108,92,231,0.10), rgba(0,180,216,0.10));
+        border: 1px solid rgba(108, 92, 231, 0.18);
+        font-size: 0.9rem; font-weight: 600;
     }
     .stat-card {
         border: 1px solid rgba(128,128,128,0.25);
@@ -292,7 +336,7 @@ AVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is not None]
 UNAVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is None]
 
 st.markdown(
-    "<div class='game-hero'><h1>🎮 Build Your Own Portfolio</h1>"
+    "<div class='game-hero'><h1><span class='wobble'>🎮</span> Build Your Own Portfolio</h1>"
     "<p>Assign weightings (and fees) across asset classes, then find out how likely your portfolio "
     "is to run out of money in retirement. Runs on the exact same simulation engine and market data "
     "as the main Mobius Wealth comparison tool - nothing here is a simplified stand-in. Play on your "
@@ -300,6 +344,42 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True,
 )
+
+_HOWTO_STEPS = [
+    ("1️⃣", "Pick your mode", "Fund store categories (broad) or individual building blocks (finer) - your call."),
+    ("2️⃣", "Build your mix", "Assign a weight and a fee to each asset class you want to hold, until you hit 100%."),
+    ("3️⃣", "Hit reveal", "Only then do you find out your probability of ruin - no peeking beforehand."),
+    ("4️⃣", "Climb the board", "Your score lands on the shared leaderboard below - everyone playing sees it."),
+]
+st.markdown(
+    "<div class='howto-row'>" + "".join(
+        f"<div class='howto-card'><div class='num'>{n}</div><br>"
+        f"<b>{title}</b><div class='txt'>{desc}</div></div>"
+        for n, title, desc in _HOWTO_STEPS
+    ) + "</div>",
+    unsafe_allow_html=True,
+)
+
+_lb_for_banner = _load_leaderboard()
+if _lb_for_banner.empty:
+    st.markdown(
+        "<div class='stats-banner'>🌱 No portfolios built yet - be the first!</div>",
+        unsafe_allow_html=True,
+    )
+else:
+    _n_plays = len(_lb_for_banner)
+    _n_teams = _lb_for_banner["Team"].nunique()
+    _avg_ruin = _lb_for_banner["Probability of ruin"].mean()
+    _best_row = _lb_for_banner.loc[_lb_for_banner["Probability of ruin"].idxmin()]
+    st.markdown(
+        "<div class='stats-banner'>"
+        f"<span>🎲 {_n_plays} portfolio{'s' if _n_plays != 1 else ''} built</span>"
+        f"<span>👥 {_n_teams} team{'s' if _n_teams != 1 else ''} playing</span>"
+        f"<span>📊 avg probability of ruin: {_avg_ruin:.1f}%</span>"
+        f"<span>🏆 best so far: {_best_row['Team']} ({_best_row['Probability of ruin']:.1f}%)</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 with st.expander("⚙️ Game setup (host controls)", expanded=False):
     c1, c2, c3, c4 = st.columns(4)
@@ -580,7 +660,15 @@ else:
     current = team_name.strip().lower()
     if current:
         ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
-    st.dataframe(ranked.drop(columns=["Allocation"], errors="ignore"), hide_index=True, use_container_width=True)
+
+    _row_colors = {0: "rgba(255,215,0,0.20)", 1: "rgba(192,192,192,0.20)", 2: "rgba(205,127,50,0.18)"}
+
+    def _highlight_podium(row):
+        style = f"background-color: {_row_colors[row.name]}" if row.name in _row_colors else ""
+        return [style] * len(row)
+
+    display_df = ranked.drop(columns=["Allocation"], errors="ignore")
+    st.dataframe(display_df.style.apply(_highlight_podium, axis=1), hide_index=True, use_container_width=True)
 
     if st.button("🏅 Reveal the winning allocation"):
         winner = ranked.iloc[0]
