@@ -22,10 +22,11 @@ how to run it, and where the loose ends are, not just what's "new" in the latest
 5. [`src/` script inventory](#src-script-inventory)
 6. [Data files](#data-files)
 7. [Adding a new portfolio](#adding-a-new-portfolio)
-8. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
-9. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
-10. [Deployment](#deployment)
-11. [Suggested next steps](#suggested-next-steps)
+8. [Persistent leaderboard setup (Google Sheets)](#persistent-leaderboard-setup-google-sheets)
+9. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
+10. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
+11. [Deployment](#deployment)
+12. [Suggested next steps](#suggested-next-steps)
 
 ## Quick start
 
@@ -250,6 +251,57 @@ existing classes): you need real historical return data for it before it can be 
   categories (see [Known gaps](#known-gaps--where-things-were-left-off)) — they're waiting on
   step (a), real return data, before they can be switched on.
 
+## Persistent leaderboard setup (Google Sheets)
+
+The Portfolio Builder Game's leaderboard code (`app/pages/1_Portfolio_Builder_Game.py`)
+supports two backends: a local CSV file (`game_state/leaderboard.csv` — the default, zero
+setup, but resets on every Streamlit Cloud restart/redeploy and isn't safe under genuinely
+simultaneous writes) or a Google Sheet (persistent, shared, and each write is a single atomic
+API call so concurrent submissions from different teams don't clobber each other). It
+automatically uses Google Sheets if credentials are configured, and silently falls back to the
+local file otherwise — check which one is active via the small status caption next to "Game
+setup" and above the leaderboard table itself (🟢 Google Sheets / 🟡 Local file only).
+
+**One-time setup to switch it on:**
+
+1. **Create a Google Cloud service account**: in the [Google Cloud Console](https://console.cloud.google.com/),
+   create (or reuse) a project, enable the **Google Sheets API**, then go to
+   *IAM & Admin → Service Accounts → Create Service Account*. Give it any name (e.g.
+   `mobius-game-leaderboard`) — no special roles needed.
+2. Open the new service account → *Keys → Add Key → Create new key → JSON*. This downloads a
+   JSON credentials file — keep it private, don't commit it to the repo.
+3. **Create a Google Sheet** for the leaderboard (any name), then **share it** with the service
+   account's email address (found in the JSON file as `client_email`, looks like
+   `...@...iam.gserviceaccount.com`) with **Editor** access.
+4. Note the Sheet's ID from its URL: `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`.
+5. In Streamlit Cloud, open this app's *Settings → Secrets* and paste (filling in your own
+   values from the downloaded JSON, and the Sheet ID from step 4):
+
+   ```toml
+   leaderboard_sheet_key = "the-sheet-id-from-step-4"
+
+   [gcp_service_account]
+   type = "service_account"
+   project_id = "..."
+   private_key_id = "..."
+   private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+   client_email = "...@....iam.gserviceaccount.com"
+   client_id = "..."
+   auth_uri = "https://accounts.google.com/o/oauth2/auth"
+   token_uri = "https://oauth2.googleapis.com/token"
+   auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+   client_x509_cert_url = "..."
+   ```
+
+   (Every field above except `leaderboard_sheet_key` comes straight from the downloaded JSON
+   file — copy each value across as-is, keeping the `\n` line breaks literal inside
+   `private_key`.)
+6. Save — Streamlit Cloud restarts the app automatically. The status caption should now read
+   🟢 Google Sheets.
+
+For local development, the same secrets can go in `.streamlit/secrets.toml` — already covered
+by this repo's `.gitignore`, since that file would contain a real private key.
+
 ## Key methodology notes and assumptions
 
 Please read before relying on any of this for client-facing output — several of these are
@@ -300,12 +352,13 @@ judgement calls, not settled facts.
   including these — **check whether that reply has come in**, then add the return series to
   `data/asset_class_returns.csv` + a row to `data/asset_class_map.csv`; no other code changes
   needed once the data exists.
-- **Portfolio Builder Game leaderboard is a CSV file on Streamlit Cloud's ephemeral disk**
-  (`game_state/leaderboard.csv`) — fine for a single live session, but it (a) resets on every
-  app restart/redeploy, and (b) can silently lose entries under genuinely simultaneous
-  submissions (naive read-modify-write, no locking). If this becomes a recurring or
-  high-traffic company-wide thing rather than a one-off, replace this with a real shared
-  store (a Google Sheet via `gspread`, or a small hosted DB) before relying on it.
+- **Portfolio Builder Game leaderboard defaults to a CSV file on Streamlit Cloud's ephemeral
+  disk** (`game_state/leaderboard.csv`) unless Google Sheets credentials are configured — see
+  [Persistent leaderboard setup](#persistent-leaderboard-setup-google-sheets) below. The code
+  supports both (falls back to the CSV automatically if Sheets isn't configured or the API
+  call fails for any reason), but **the actual Google Cloud setup steps still need to be done
+  once** for real persistence — check whether that's been completed before relying on the
+  leaderboard surviving a redeploy.
 - **Individual UK equities work (internship Weeks 5-8)** is a separate, less mature thread
   from the main simulator — `equity_income.py` + the AQR/RAISE swap tests are real, working
   code, but this hasn't been folded into the main app's UI at all; it's currently

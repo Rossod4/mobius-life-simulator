@@ -12,10 +12,11 @@ here reads the same data/ CSVs and PORTFOLIOS-adjacent helpers as the main page,
 sync automatically.
 
 Designed for a live group activity: each team plays on their OWN device against the same deployed
-app URL. The leaderboard is therefore persisted to a small CSV on disk (game_state/leaderboard.csv,
-gitignored - it's session runtime state, not source data) rather than st.session_state, which is
-per-browser-tab and would leave every other team's screen blank. This is a lightweight, good-enough
-store for a live event with a handful of teams - not built to survive concurrent writes at scale.
+app URL. The leaderboard therefore persists to a shared Google Sheet if credentials are configured
+(see README - "Persistent leaderboard setup"), falling back automatically to a local CSV on disk
+(game_state/leaderboard.csv, gitignored - it's session runtime state, not source data) otherwise.
+st.session_state alone won't do, since that's per-browser-tab and would leave every other team's
+screen blank.
 
 Styling is intentionally more playful than the main comparison tool (gradient hero banner, big
 animated reveal card, medal leaderboard) - this page is a game, not a client-facing pitch deck -
@@ -51,6 +52,56 @@ st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap');
+
+    /* Page-wide theme wash + confetti dots, so the whole page reads as "a game", not just the
+       hero card sitting on an otherwise plain white Streamlit page. Deliberately very low alpha
+       so body text everywhere else stays fully legible in both light and dark mode. */
+    [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(rgba(108,92,231,0.05) 2px, transparent 2px),
+            linear-gradient(160deg, rgba(108,92,231,0.05), rgba(0,180,216,0.05) 45%, rgba(12,163,12,0.04) 100%);
+        background-size: 34px 34px, 100% 100%;
+    }
+    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+        font-family: 'Baloo 2', sans-serif !important;
+    }
+    /* Secondary (non-primary) buttons get the same playful pill treatment, just quieter, so
+       "Refresh leaderboard" / "Build another portfolio" etc. feel like part of the same game
+       instead of default grey Streamlit chrome. */
+    div[data-testid="stButton"] > button:not([kind="primary"]) {
+        font-family: 'Baloo 2', sans-serif;
+        font-weight: 700;
+        border-radius: 999px;
+        border: 2px solid #6C5CE7;
+        color: #6C5CE7;
+        transition: transform 0.15s ease, background 0.15s ease;
+    }
+    div[data-testid="stButton"] > button:not([kind="primary"]):hover {
+        background: rgba(108, 92, 231, 0.1);
+        transform: scale(1.015);
+        color: #6C5CE7;
+    }
+    /* Card-wrap the allocation editor and leaderboard tables so they feel like game panels
+       rather than plain spreadsheet grids. */
+    [data-testid="stDataFrame"] {
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 4px 14px rgba(76, 41, 196, 0.10);
+        border: 1px solid rgba(108, 92, 231, 0.18);
+    }
+    .step-row { display: flex; gap: 0.6rem; margin-bottom: 1.2rem; }
+    .step-pill {
+        flex: 1; text-align: center; padding: 0.55rem 0.5rem; border-radius: 999px;
+        font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 0.85rem;
+        border: 2px solid rgba(108, 92, 231, 0.25); color: rgba(108, 92, 231, 0.55);
+        background: rgba(108, 92, 231, 0.04); transition: all 0.2s ease;
+    }
+    .step-pill.active {
+        border-color: #6C5CE7; color: white;
+        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        box-shadow: 0 4px 12px rgba(108, 92, 231, 0.35);
+    }
+    .step-pill.done { border-color: #0ca30c; color: #0ca30c; background: rgba(12,163,12,0.06); }
 
     .game-hero {
         position: relative;
@@ -253,7 +304,52 @@ def _median_cagr(paths, starting_pot, horizon_years):
     return (median_final / starting_pot) ** (1.0 / horizon_years) - 1.0
 
 
+@st.cache_resource(show_spinner=False)
+def _gsheet_ws_cached():
+    """Live gspread Worksheet connection, memoized once per server process (a connection isn't
+    picklable/comparable data, hence cache_resource not cache_data). Only called once secrets
+    are confirmed present - see _gsheet_ws()."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scopes)
+    gc = gspread.authorize(creds)
+    ws = gc.open_by_key(st.secrets["leaderboard_sheet_key"]).sheet1
+    if not ws.get_all_values():
+        ws.append_row(LEADERBOARD_COLUMNS)
+    return ws
+
+
+def _gsheet_ws():
+    """Returns a gspread Worksheet if Google Sheets credentials are configured in st.secrets
+    (see README - 'Persistent leaderboard setup'), else None - every caller below falls back to
+    the local game_state/leaderboard.csv file, which is fine for local dev/testing but resets on
+    every Streamlit Cloud restart/redeploy and isn't safe under genuinely concurrent writes."""
+    try:
+        if "gcp_service_account" not in st.secrets or "leaderboard_sheet_key" not in st.secrets:
+            return None
+    except Exception:
+        return None
+    try:
+        return _gsheet_ws_cached()
+    except Exception:
+        return None
+
+
+def _leaderboard_mode() -> str:
+    return ("🟢 Google Sheets (persistent, survives restarts)" if _gsheet_ws() is not None
+            else "🟡 Local file only (resets on app restart/redeploy - see README)")
+
+
 def _load_leaderboard() -> pd.DataFrame:
+    ws = _gsheet_ws()
+    if ws is not None:
+        try:
+            df = pd.DataFrame(ws.get_all_records())
+            return df if not df.empty else pd.DataFrame(columns=LEADERBOARD_COLUMNS)
+        except Exception:
+            pass  # fall through to the local file if the API call itself fails
     if LEADERBOARD_CSV.exists():
         try:
             return pd.read_csv(LEADERBOARD_CSV)
@@ -263,14 +359,34 @@ def _load_leaderboard() -> pd.DataFrame:
 
 
 def _append_leaderboard(row: dict):
+    ws = _gsheet_ws()
+    if ws is not None:
+        try:
+            ws.append_row([row.get(c, "") for c in LEADERBOARD_COLUMNS])
+            return
+        except Exception:
+            pass  # fall through to the local file if the API call itself fails
     df = pd.concat([_load_leaderboard(), pd.DataFrame([row])], ignore_index=True)
     df.to_csv(LEADERBOARD_CSV, index=False)
 
 
-def _stat_card(label, value, color=None):
+def _clear_leaderboard():
+    ws = _gsheet_ws()
+    if ws is not None:
+        try:
+            ws.clear()
+            ws.append_row(LEADERBOARD_COLUMNS)
+            return
+        except Exception:
+            pass
+    pd.DataFrame(columns=LEADERBOARD_COLUMNS).to_csv(LEADERBOARD_CSV, index=False)
+
+
+def _stat_card(label, value, color=None, icon=None):
     color_style = f"color:{color};" if color else ""
+    icon_html = f"{icon} " if icon else ""
     st.markdown(
-        f"<div class='stat-card'><div class='label'>{label}</div>"
+        f"<div class='stat-card'><div class='label'>{icon_html}{label}</div>"
         f"<div class='value' style='{color_style}'>{value}</div></div>",
         unsafe_allow_html=True,
     )
@@ -401,9 +517,10 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
              "diversification trade-off instead of just picking the priciest option everywhere.",
     )
     st.divider()
+    st.caption(f"Leaderboard storage: {_leaderboard_mode()}")
     st.caption(f"Leaderboard has {len(_load_leaderboard())} entries.")
     if st.button("🗑️ Clear leaderboard (start a new game)"):
-        pd.DataFrame(columns=LEADERBOARD_COLUMNS).to_csv(LEADERBOARD_CSV, index=False)
+        _clear_leaderboard()
         st.rerun()
 
 granularity = st.radio(
@@ -416,6 +533,17 @@ granularity = st.radio(
 )
 is_fund_store = granularity == "Fund store categories"
 labels = AVAILABLE_CATEGORIES if is_fund_store else list(AC.keys())
+result_key = f"game_result_{granularity}"
+
+_current_step = "reveal" if st.session_state.get(result_key) is not None else "build"
+st.markdown(
+    "<div class='step-row'>"
+    f"<div class='step-pill{' active' if _current_step == 'build' else ' done'}'>🏗️ Build</div>"
+    f"<div class='step-pill{' active' if _current_step == 'reveal' else ''}'>🎉 Reveal</div>"
+    "<div class='step-pill'>🏆 Leaderboard</div>"
+    "</div>",
+    unsafe_allow_html=True,
+)
 
 editor_key = f"game_editor_{granularity}"
 if editor_key not in st.session_state:
@@ -477,16 +605,16 @@ st.caption(build_stage)
 progress_col, count_col, fee_col, name_col = st.columns(4)
 with progress_col:
     _stat_card("Total allocated", f"{total_weight:.1f}% / 100%",
-               COLOR_GOOD if weights_ok else None)
+               COLOR_GOOD if weights_ok else None, icon="🧮")
 with count_col:
     _stat_card("Asset classes used", f"{selected_count} / {max_classes}",
-               COLOR_GOOD if count_ok else COLOR_BAD if selected_count else None)
+               COLOR_GOOD if count_ok else COLOR_BAD if selected_count else None, icon="🧩")
 with fee_col:
     _stat_card("Weighted fee", f"{live_fee_pct:.2f}% / {max_fee_pct:.2f}%",
-               COLOR_GOOD if fee_ok else COLOR_BAD if total_weight > 0 else None)
+               COLOR_GOOD if fee_ok else COLOR_BAD if total_weight > 0 else None, icon="💷")
 with name_col:
     _stat_card("Team name set", "Yes ✅" if name_ok else "No ❌",
-               COLOR_GOOD if name_ok else COLOR_BAD)
+               COLOR_GOOD if name_ok else COLOR_BAD, icon="🏷️")
 
 if not weights_ok:
     st.warning("Your weights need to add up to 100% before you can build your portfolio.")
@@ -501,8 +629,6 @@ if not name_ok:
 
 reveal = st.button("🎯 Build my portfolio & reveal my score", type="primary",
                     disabled=not can_reveal, use_container_width=True)
-
-result_key = f"game_result_{granularity}"
 
 if reveal:
     rows = edited[edited["Weight %"] > 0]
@@ -568,10 +694,10 @@ if st.session_state.get(result_key) is not None:
     return_col1, return_col2 = st.columns(2)
     with return_col1:
         _stat_card("Median annual return", f"{median_return * 100:+.1f}%",
-                   COLOR_GOOD if median_return >= 0 else COLOR_BAD)
+                   COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈")
     with return_col2:
         median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
-        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}")
+        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰")
 
     badges = st.session_state.get(f"game_badges_{granularity}", [])
     if badges:
@@ -648,6 +774,7 @@ if st.session_state.get(result_key) is not None:
 
 st.divider()
 st.markdown("### 🏆 Leaderboard")
+st.caption(_leaderboard_mode())
 leaderboard = _load_leaderboard()
 if st.button("🔄 Refresh leaderboard"):
     st.rerun()

@@ -4,6 +4,9 @@ output/
 # Portfolio Builder Game runtime state (leaderboard) - resets per game session, not source data
 game_state/
 
+# Local Streamlit secrets (Google Sheets service account key etc.) - never commit real credentials
+.streamlit/secrets.toml
+
 # Python
 __pycache__/
 *.pyc
