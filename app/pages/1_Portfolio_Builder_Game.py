@@ -4,10 +4,10 @@ asset-class data as the main comparison tool (src/engine.py, data/asset_class_re
 player's constructed portfolio is scored on exactly the same probability-of-ruin metric the main
 app uses - just with the player choosing the allocation and fees themselves, across the Mobius
 fund store's own asset-class sub-categories (or, in the alternate mode, the finer individual
-building blocks), instead of comparing two pre-built portfolios. The host can optionally turn on
-a "crash challenge" (CRASH_SCENARIOS) - a real historical crisis (dot-com crash, 2008 GFC, 2022
-inflation shock) as the simulation's starting point, so the question becomes "would this survive
-what actually happened" rather than an average over 26 years of history.
+building blocks), instead of comparing two pre-built portfolios. After revealing, the player can
+also click through real historical crises (CRASH_SCENARIOS) to re-test the SAME built portfolio
+starting right as a real crash happened, instead of the full-history average - "would this have
+survived the 2008 crash" as a fun, optional exploration once the headline score is already in.
 
 Streamlit auto-discovers this file from app/pages/ as a second page of the multipage app entered
 via `streamlit run app/app.py` - no changes to app.py needed, and no data duplicated: everything
@@ -240,10 +240,11 @@ st.markdown(
     }}
 
     .crash-banner {{
-        border-radius: 14px; padding: 0.9rem 1.2rem; margin-bottom: 1.2rem;
-        background: {CORAL_RED}; color: white; text-align: center;
+        border-radius: 14px; padding: 0.9rem 1.2rem; margin-bottom: 0.75rem;
+        color: white; text-align: center;
         font-size: 0.95rem; font-weight: 600;
-        box-shadow: 0 4px 14px rgba(255, 105, 105, 0.35);
+        box-shadow: 0 4px 14px rgba(14, 15, 20, 0.18);
+        animation: popIn 0.4s cubic-bezier(.34,1.56,.64,1);
     }}
 
     .stat-card {{
@@ -339,7 +340,7 @@ st.markdown(
 GAME_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "game_state"
 GAME_STATE_DIR.mkdir(exist_ok=True)
 LEADERBOARD_CSV = GAME_STATE_DIR / "leaderboard.csv"
-LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Scenario", "Probability of ruin",
+LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin",
                         "Median annual return %", "Asset classes used", "Allocation"]
 
 SUSPENSE_MESSAGES = [
@@ -373,16 +374,12 @@ cpi = load_cpi(asset_df)
 
 
 @st.cache_data(show_spinner=False)
-def _benchmark_result(name, _asset_df, _cpi, profile, scenario_key=None):
-    """Cached per (portfolio name, profile, scenario_key) - independent of any player's own
-    allocation, so every team playing with the same host-set client profile/scenario shares one
-    cached run instead of re-simulating Better on every single reveal click. _asset_df/_cpi are
-    excluded from the cache key (the underscore prefix - large objects, expensive to hash), so
-    scenario_key exists purely to force a fresh cache entry when the crash-challenge scenario
-    changes the asset_df's date range but the DataFrame's identity/hash wouldn't otherwise be
-    re-checked. Returns the full SimResult (not just prob_ruin) so its simulated paths can feed
-    the fan chart too. Only ever called with "Better" - deliberately not any competitor
-    portfolio, since this is an internal Mobius game."""
+def _benchmark_result(name, _asset_df, _cpi, profile):
+    """Cached per (portfolio name, profile) - independent of any player's own allocation, so every
+    team playing with the same host-set client profile shares one cached run instead of
+    re-simulating Better on every single reveal click. Returns the full SimResult (not just
+    prob_ruin) so its simulated paths can feed the fan chart too. Only ever called with "Better" -
+    deliberately not any competitor portfolio, since this is an internal Mobius game."""
     return run_simulation(name, _asset_df, _cpi, profile, method="stationary_block",
                            n_sims=2000, seed=42)
 
@@ -651,36 +648,12 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
         help="A second constraint alongside the asset-class cap - forces a genuine cost-vs-"
              "diversification trade-off instead of just picking the priciest option everywhere.",
     )
-    scenario_choice = st.selectbox(
-        "💥 Crash challenge", list(CRASH_SCENARIOS.keys()),
-        help="Instead of averaging over all of history, test every portfolio as if retirement "
-             "started right at a real market crisis - the same 'sequence of returns' stress test "
-             "the main app offers. A portfolio can look fine on average and still get wiped out "
-             "if the bad years land right at the start.",
-    )
     st.divider()
     st.caption(f"Leaderboard storage: {_leaderboard_mode()}")
     st.caption(f"Leaderboard has {len(_load_leaderboard())} entries.")
     if st.button("🗑️ Clear leaderboard (start a new game)"):
         _clear_leaderboard()
         st.rerun()
-
-# When a crash scenario is active, every simulation below (the player's own and Mobius Better's)
-# bootstraps only from months AFTER that crisis date - same filtering approach as the main app's
-# own stress-test slider (asset_df.index.date >= start). cpi doesn't need separate filtering:
-# run_simulation intersects it against the (already-restricted) return series' own index.
-_scenario_start = CRASH_SCENARIOS[scenario_choice]
-if _scenario_start is not None:
-    sim_asset_df = asset_df[asset_df.index.date >= _scenario_start]
-    _years_available = (asset_df.index.max().date() - _scenario_start).days / 365.25
-    st.markdown(
-        f"<div class='crash-banner'>💥 CRASH CHALLENGE ACTIVE: {scenario_choice} — every portfolio "
-        f"is tested as if retirement started right here, using ~{_years_available:.0f} years of what "
-        "actually happened next, not an average over all history.</div>",
-        unsafe_allow_html=True,
-    )
-else:
-    sim_asset_df = asset_df
 
 granularity = st.radio(
     "🧩 Asset classes",
@@ -806,24 +779,21 @@ if reveal:
     fees = pd.Series(fee_vals, index=ac_vals, dtype=float).groupby(level=0).mean() / 100.0
     custom_fee = float((weights * fees.reindex(weights.index)).sum())
 
-    suspense_messages = SUSPENSE_MESSAGES
-    if _scenario_start is not None:
-        suspense_messages = [f"💥 Rewinding to {scenario_choice}...", *SUSPENSE_MESSAGES,
-                              "⏳ Playing the real sequence of events forward from there..."]
     suspense_slot = st.empty()
-    for msg in suspense_messages:
+    for msg in SUSPENSE_MESSAGES:
         suspense_slot.markdown(f"<div class='suspense-text'>{msg}</div>", unsafe_allow_html=True)
         time.sleep(0.45)
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
-    result = run_simulation("Your portfolio", sim_asset_df, cpi, profile, method="stationary_block",
+    result = run_simulation("Your portfolio", asset_df, cpi, profile, method="stationary_block",
                              n_sims=2000, seed=42, custom_weights=weights, custom_fee=custom_fee)
     suspense_slot.empty()
 
     median_return = _median_cagr(result.paths, float(pot), horizon)
     st.session_state[result_key] = result.prob_ruin
     st.session_state[f"game_return_{granularity}"] = median_return
+    st.session_state[f"game_fee_{granularity}"] = custom_fee
     st.session_state[f"game_paths_{granularity}"] = result.paths
     st.session_state[f"game_weights_{granularity}"] = weights
     st.session_state[f"game_badges_{granularity}"] = _badges(weights, custom_fee, selected_count, max_classes)
@@ -831,7 +801,6 @@ if reveal:
         "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "Team": team_name.strip(),
         "Mode": granularity,
-        "Scenario": scenario_choice,
         "Probability of ruin": round(result.prob_ruin * 100, 2),
         "Median annual return %": round(median_return * 100, 2),
         "Asset classes used": selected_count,
@@ -852,11 +821,42 @@ if st.session_state.get(result_key) is not None:
         f"</div>",
         unsafe_allow_html=True,
     )
-    if _scenario_start is not None:
-        st.caption(f"💥 Tested against: **{scenario_choice}** - the real sequence of market history "
-                    "from that point forward, not a random resample of all history.")
     if prob_ruin < 0.15:
         st.balloons()
+
+    st.markdown("#### 💥 Would your portfolio have survived...?")
+    st.caption("Click a real historical crisis to re-test the SAME portfolio you just built, "
+               "starting right as it happened - the real sequence of what actually came next, "
+               "not a random resample of history.")
+    _crash_profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
+                                    initial_annual_spend=float(spend))
+    _you_weights = st.session_state[f"game_weights_{granularity}"]
+    _you_fee = st.session_state.get(f"game_fee_{granularity}", 0.001)
+    _crash_only = {k: v for k, v in CRASH_SCENARIOS.items() if v is not None}
+    _crash_cols = st.columns(len(_crash_only))
+    for _col, (_label, _start_date) in zip(_crash_cols, _crash_only.items()):
+        with _col:
+            if st.button(_label, key=f"crash_btn_{granularity}_{_label}", use_container_width=True):
+                _crash_asset_df = asset_df[asset_df.index.date >= _start_date]
+                _crash_result = run_simulation(
+                    "Your portfolio", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
+                    n_sims=2000, seed=42, custom_weights=_you_weights, custom_fee=_you_fee,
+                )
+                st.session_state[f"crash_result_{granularity}_{_label}"] = _crash_result.prob_ruin
+
+    for _label in _crash_only:
+        _crash_key = f"crash_result_{granularity}_{_label}"
+        if st.session_state.get(_crash_key) is not None:
+            _crash_ruin = st.session_state[_crash_key]
+            _survived = _crash_ruin < 0.5
+            _verdict = "✅ SURVIVED" if _survived else "💀 WIPED OUT"
+            _verdict_color = COLOR_GOOD if _survived else COLOR_BAD
+            st.markdown(
+                f"<div class='crash-banner' style='background:{_verdict_color};'>"
+                f"{_label}: <b>{_verdict}</b> — {_crash_ruin * 100:.1f}% probability of ruin"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
     median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
     median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
@@ -879,7 +879,7 @@ if st.session_state.get(result_key) is not None:
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
-    better_result = _benchmark_result("Better", sim_asset_df, cpi, profile, scenario_key=scenario_choice)
+    better_result = _benchmark_result("Better", asset_df, cpi, profile)
     better_ruin = better_result.prob_ruin
 
     st.markdown("#### ⚔️ How you compare")
