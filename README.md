@@ -98,6 +98,7 @@ relevant CSV (by hand, or via the app's own "Edit data" sidebar tab) rather than
 | `app/app.py` | The main Streamlit comparison app. |
 | `app/pages/` | Additional Streamlit pages (currently just the Portfolio Builder Game) — auto-discovered by Streamlit, no registration needed. |
 | `app/requirements.txt` | Exact pinned dependencies for both `app.py` and the game page (same environment). |
+| `app/assets/mobius_logo_icon.png` | The real Mobius logo mark, committed to the repo - cropped (transparent background) from `Mobius Brand Identity Overview v01-2.pdf` (page 7). If the brand refreshes, ask marketing (`brand@mobiuslife.co.uk`, per the brand PDF's own contact page) for current master artwork rather than re-cropping from an old PDF. The brand colour palette (`CARBON_BLACK`, `LIGHT_SAGE`, `CLOUD_BLUE`, etc.) is hardcoded as constants at the top of both `app/app.py` and `app/pages/1_Portfolio_Builder_Game.py`, sourced from the same PDF's colour palette page (page 12) - update both files together if the brand refreshes. |
 | `src/` | All Python logic — the core simulation engine, plus every one-off data-extraction/report/analysis script used to get here. See the [script inventory](#src-script-inventory) below. |
 | `data/` | Cleaned CSVs the app reads at runtime — the actual source of truth. See [Data files](#data-files). |
 | `data/equities/` | UK individual-share-level data (Weeks 5-8 thread) and the RAISE/AQR index data used in the equity-swap sensitivity tests. |

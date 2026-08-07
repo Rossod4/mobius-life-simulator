@@ -42,6 +42,33 @@ import cma as cma_mod
 
 st.set_page_config(page_title="Mobius Wealth Decumulation Simulator", layout="wide")
 
+# Real Mobius brand typeface (Inter - the brand guide's sanctioned fallback for internal-facing
+# work where the licensed Suisse Int'l typeface isn't available/embeddable in a web app) applied
+# to headings only, leaving the rest of Streamlit's default styling and layout untouched - this
+# page has a lot of established, working structure that doesn't need touching for a brand pass.
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 500 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_data(show_spinner=False)
+def _logo_data_uri() -> str:
+    """Base64-encodes the brand logo mark once per process, so it can sit inline inside the
+    custom-HTML title row below - Streamlit has no native way to place st.image next to an
+    st.title. Cropped from the Mobius Brand Identity Overview PDF, transparent background."""
+    import base64
+    logo_path = Path(__file__).resolve().parent / "assets" / "mobius_logo_icon.png"
+    return "data:image/png;base64," + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+
 # Streamlit re-runs this ENTIRE script on every widget interaction, even ones unrelated to the
 # simulation (e.g. toggling a checkbox in the Advanced tab) - without caching, that means every
 # portfolio's Monte Carlo simulation reruns from scratch on every single click, which is slow
@@ -87,8 +114,14 @@ def _cached_run_simulation_fee_override(name, fee_override, asset_df, cpi, profi
 # which side of the comparison is ours - both palettes are colourblind-safe categorical orders,
 # assigned by each portfolio's registration order within its own Owner group so colours stay
 # stable as portfolios are added.
-MOBIUS_PALETTE = ["#1baf7a", "#eda100", "#3b7dd8", "#a855c9", "#d8546b"]
-COMPETITOR_PALETTE = ["#6b6f76", "#494d54", "#9a9ea5", "#2f3237", "#c7cad0"]
+#
+# Derived from the real Mobius secondary brand palette (Mobius Brand Identity Overview v1.02):
+# Light Sage/Cloud Blue/Coral Red/Pale Yellow/Pale Pink, each deepened enough to read clearly as
+# a chart line - the brand's own hex values (e.g. Cloud Blue #B6B7E0) are soft pastels meant for
+# large fills/backgrounds, too pale for a 2-3px line on white. Competitor grey scale is the
+# brand's own literal Grey 400-900 values, unmodified.
+MOBIUS_PALETTE = ["#4F9C7A", "#6B6FC9", "#FF6969", "#C9A227", "#D98FA3"]
+COMPETITOR_PALETTE = ["#787A87", "#404552", "#9494A1", "#262936", "#B0B0BA"]
 
 # Named sequence-of-returns stress scenarios: each sets the historical window's START to a
 # well-known crisis point, so every chart/statistic on the page (Monte Carlo bootstrap AND the
@@ -900,7 +933,13 @@ def build_summary_pdf(accum_results: dict, decum_results: dict, accum_profile_kw
     return bytes(pdf.output())
 
 
-st.title("Mobius Wealth — Accumulation & Decumulation Simulator")
+st.markdown(
+    f"<div style='display:flex; align-items:center; gap:0.6rem; margin-bottom:0.25rem;'>"
+    f"<img src='{_logo_data_uri()}' alt='Mobius' style='height:2.2rem; width:auto;'>"
+    f"<h1 style='margin:0; font-weight:500;'>Mobius Wealth — Accumulation &amp; Decumulation Simulator</h1>"
+    f"</div>",
+    unsafe_allow_html=True,
+)
 st.caption(
     "Compare any registered portfolio - a competitor's fund, or another Mobius construction - "
     "against Mobius's own: Accumulation tests growing the pot with no withdrawals, Decumulation "

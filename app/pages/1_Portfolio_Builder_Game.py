@@ -18,10 +18,13 @@ app URL. The leaderboard therefore persists to a shared Google Sheet if credenti
 st.session_state alone won't do, since that's per-browser-tab and would leave every other team's
 screen blank.
 
-Styling is intentionally more playful than the main comparison tool (gradient hero banner, big
-animated reveal card, medal leaderboard) - this page is a game, not a client-facing pitch deck -
-but reuses the main app's own probability-of-ruin colour coding (green/amber/red) so the one number
-that actually matters still reads the same way in both places.
+Styled with the real Mobius brand identity (Mobius Brand Identity Overview v1.02 - colours, logo
+mark and Inter typeface, see the brand palette constants below and app/assets/mobius_logo_icon.png)
+rather than an invented theme, while still being more playful than the main comparison tool (big
+animated reveal card, medal leaderboard, confetti) since this page is a game, not a client-facing
+pitch deck. Reuses the main app's own probability-of-ruin colour coding (green/amber/red) - kept
+separate from the brand palette since it's a functional risk signal, not a decorative choice - so
+the one number that actually matters still reads the same way in both places.
 """
 from __future__ import annotations
 
@@ -44,175 +47,225 @@ from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
 
 # Same risk colours as the main app's probability-of-ruin cards (app.py's ruin_color logic) -
-# consistent meaning across both pages, just wrapped in more decorative packaging here.
+# consistent meaning across both pages. Kept separate from the brand palette below: these are a
+# functional red/amber/green risk convention, not a decorative brand choice, and the result
+# card's white-on-colour text needs the extra saturation these have vs. the brand's soft pastels.
 COLOR_GOOD = "#0ca30c"
 COLOR_WARN = "#c98500"
 COLOR_BAD = "#d03b3b"
 
+# Real Mobius brand palette (Mobius Brand Identity Overview v1.02) - see README for the source
+# PDF. Primary colours are Carbon Black + white; secondary colours are soft pastels used as
+# accents, with Coral Red reserved for one or two high-impact moments rather than as a base
+# colour, per the brand guide's own "used sparingly" instruction.
+CARBON_BLACK = "#0E0F14"
+GREY_900 = "#262936"
+GREY_800 = "#404552"
+GREY_700 = "#5C5E6B"
+GREY_600 = "#787A87"
+GREY_500 = "#9494A1"
+GREY_400 = "#B0B0BA"
+STEEL_GREY = "#CCCCD5"
+GREY_200 = "#E0E0E8"
+GREY_100 = "#F2F2FA"
+LIGHT_SAGE = "#A4CDBB"
+CLOUD_BLUE = "#B6B7E0"
+PALE_PINK = "#F1DBD7"
+PALE_YELLOW = "#F8F0C8"
+CORAL_RED = "#FF6969"
+
+
+@st.cache_data(show_spinner=False)
+def _logo_data_uri() -> str:
+    """Base64-encodes the brand logo mark once per process, so it can sit inline inside custom
+    HTML (the hero banner) the way an <img> tag needs - Streamlit has no native way to place
+    st.image inside a styled div. Cropped from the brand guide PDF, transparent background."""
+    import base64
+    logo_path = Path(__file__).resolve().parent.parent / "assets" / "mobius_logo_icon.png"
+    return "data:image/png;base64," + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+
+
 st.markdown(
-    """
+    f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-    /* Page-wide theme wash + confetti dots, so the whole page reads as "a game", not just the
-       hero card sitting on an otherwise plain white Streamlit page. Deliberately very low alpha
-       so body text everywhere else stays fully legible in both light and dark mode. */
-    [data-testid="stAppViewContainer"] {
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
+    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {{
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 500 !important;
+    }}
+
+    /* Very light, mostly-white page wash - the brand guide is explicit that Mobius "should
+       always feel like a black and white brand", so this stays deliberately understated rather
+       than the colourful theme wash an earlier version of this page used. */
+    [data-testid="stAppViewContainer"] {{
         background:
-            radial-gradient(rgba(108,92,231,0.05) 2px, transparent 2px),
-            linear-gradient(160deg, rgba(108,92,231,0.05), rgba(0,180,216,0.05) 45%, rgba(12,163,12,0.04) 100%);
-        background-size: 34px 34px, 100% 100%;
-    }
-    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-        font-family: 'Baloo 2', sans-serif !important;
-    }
-    /* Secondary (non-primary) buttons get the same playful pill treatment, just quieter, so
-       "Refresh leaderboard" / "Build another portfolio" etc. feel like part of the same game
-       instead of default grey Streamlit chrome. */
-    div[data-testid="stButton"] > button:not([kind="primary"]) {
-        font-family: 'Baloo 2', sans-serif;
-        font-weight: 700;
-        border-radius: 999px;
-        border: 2px solid #6C5CE7;
-        color: #6C5CE7;
-        transition: transform 0.15s ease, background 0.15s ease;
-    }
-    div[data-testid="stButton"] > button:not([kind="primary"]):hover {
-        background: rgba(108, 92, 231, 0.1);
-        transform: scale(1.015);
-        color: #6C5CE7;
-    }
-    /* Card-wrap the allocation editor and leaderboard tables so they feel like game panels
-       rather than plain spreadsheet grids. */
-    [data-testid="stDataFrame"] {
-        border-radius: 14px;
-        overflow: hidden;
-        box-shadow: 0 4px 14px rgba(76, 41, 196, 0.10);
-        border: 1px solid rgba(108, 92, 231, 0.18);
-    }
-    .step-row { display: flex; gap: 0.6rem; margin-bottom: 1.2rem; }
-    .step-pill {
-        flex: 1; text-align: center; padding: 0.55rem 0.5rem; border-radius: 999px;
-        font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 0.85rem;
-        border: 2px solid rgba(108, 92, 231, 0.25); color: rgba(108, 92, 231, 0.55);
-        background: rgba(108, 92, 231, 0.04); transition: all 0.2s ease;
-    }
-    .step-pill.active {
-        border-color: #6C5CE7; color: white;
-        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
-        box-shadow: 0 4px 12px rgba(108, 92, 231, 0.35);
-    }
-    .step-pill.done { border-color: #0ca30c; color: #0ca30c; background: rgba(12,163,12,0.06); }
+            radial-gradient(rgba(204,204,213,0.35) 1.5px, transparent 1.5px),
+            linear-gradient(160deg, {GREY_100}, #ffffff 55%);
+        background-size: 30px 30px, 100% 100%;
+    }}
 
-    .game-hero {
-        position: relative;
-        overflow: hidden;
-        background: linear-gradient(135deg, #6C5CE7 0%, #00B4D8 55%, #0ca30c 120%);
-        border-radius: 18px;
-        padding: 1.6rem 2rem;
-        margin-bottom: 1.2rem;
-        box-shadow: 0 8px 24px rgba(76, 41, 196, 0.25);
-    }
-    .game-hero::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background-image:
-            radial-gradient(rgba(255,255,255,0.16) 2px, transparent 2px),
-            radial-gradient(rgba(255,255,255,0.12) 2px, transparent 2px);
-        background-size: 42px 42px;
-        background-position: 0 0, 21px 21px;
-        pointer-events: none;
-    }
-    .game-hero h1 {
-        position: relative;
-        font-family: 'Baloo 2', sans-serif;
-        color: white;
-        font-size: 2.1rem;
-        margin: 0 0 0.35rem 0;
-    }
-    .game-hero h1 .wobble { display: inline-block; animation: wobble 2.4s ease-in-out infinite; }
-    @keyframes wobble {
-        0%, 100% { transform: rotate(0deg); }
-        25% { transform: rotate(-8deg); }
-        75% { transform: rotate(8deg); }
-    }
-    .game-hero p {
-        position: relative;
-        color: rgba(255,255,255,0.92);
-        font-size: 0.98rem;
-        margin: 0;
-        max-width: 60rem;
-    }
-    .howto-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.2rem; }
-    .howto-card {
-        flex: 1 1 200px;
-        border-radius: 14px;
-        padding: 0.9rem 1rem;
-        background: rgba(108, 92, 231, 0.06);
-        border: 1px solid rgba(108, 92, 231, 0.18);
-    }
-    .howto-card .num {
-        display: inline-flex; align-items: center; justify-content: center;
-        width: 1.6rem; height: 1.6rem; border-radius: 50%;
-        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
-        color: white; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 0.85rem;
-        margin-bottom: 0.4rem;
-    }
-    .howto-card .txt { font-size: 0.85rem; color: inherit; opacity: 0.9; }
-    .stats-banner {
-        display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center;
-        border-radius: 14px; padding: 0.75rem 1rem; margin-bottom: 1.2rem;
-        background: linear-gradient(90deg, rgba(108,92,231,0.10), rgba(0,180,216,0.10));
-        border: 1px solid rgba(108, 92, 231, 0.18);
-        font-size: 0.9rem; font-weight: 600;
-    }
-    .stat-card {
-        border: 1px solid rgba(128,128,128,0.25);
-        border-radius: 14px;
-        padding: 0.85rem 1rem;
-        text-align: center;
-        background: rgba(128,128,128,0.06);
-        transition: transform 0.15s ease;
-    }
-    .stat-card:hover { transform: translateY(-2px); }
-    .stat-card .label {
-        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.05em; color: #898781;
-    }
-    .stat-card .value {
-        font-size: 1.6rem; font-weight: 800; line-height: 1.3;
-    }
-    .stat-card .comment {
-        font-size: 0.78rem; font-style: italic; opacity: 0.75; margin-top: 0.35rem;
-    }
-    div[data-testid="stButton"] > button[kind="primary"] {
-        font-family: 'Baloo 2', sans-serif;
-        font-size: 1.1rem;
-        font-weight: 700;
+    div[data-testid="stButton"] > button[kind="primary"] {{
+        font-family: 'Inter', sans-serif;
+        font-size: 1.05rem;
+        font-weight: 600;
         border-radius: 999px;
-        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        background: {CORAL_RED};
+        color: white;
         border: none;
         padding: 0.7rem 0;
         transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
+    }}
+    div[data-testid="stButton"] > button[kind="primary"]:hover {{
         transform: scale(1.015);
-        box-shadow: 0 6px 18px rgba(108, 92, 231, 0.4);
-    }
-    @keyframes popIn {
-        0% { transform: scale(0.4); opacity: 0; }
-        60% { transform: scale(1.12); opacity: 1; }
-        80% { transform: scale(0.96); }
-        100% { transform: scale(1); }
-    }
-    @keyframes numberPop {
-        0% { transform: scale(0.3); opacity: 0; }
-        50% { transform: scale(1.25); opacity: 1; }
-        75% { transform: scale(0.9); }
-        100% { transform: scale(1); }
-    }
-    .result-card {
+        box-shadow: 0 6px 18px rgba(255, 105, 105, 0.4);
+    }}
+    /* Secondary buttons stay in the black/white core palette - Coral Red is reserved for the
+       one primary call-to-action per the brand guide's "use sparingly" instruction. */
+    div[data-testid="stButton"] > button:not([kind="primary"]) {{
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        border-radius: 999px;
+        border: 2px solid {CARBON_BLACK};
+        color: {CARBON_BLACK};
+        transition: transform 0.15s ease, background 0.15s ease;
+    }}
+    div[data-testid="stButton"] > button:not([kind="primary"]):hover {{
+        background: {GREY_100};
+        transform: scale(1.015);
+        color: {CARBON_BLACK};
+    }}
+
+    /* Card-wrap the allocation editor and leaderboard tables so they feel like designed panels
+       rather than plain spreadsheet grids. */
+    [data-testid="stDataFrame"] {{
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 4px 14px rgba(14, 15, 20, 0.06);
+        border: 1px solid {STEEL_GREY};
+    }}
+
+    .step-row {{ display: flex; gap: 0.6rem; margin-bottom: 1.2rem; }}
+    .step-pill {{
+        flex: 1; text-align: center; padding: 0.55rem 0.5rem; border-radius: 999px;
+        font-weight: 600; font-size: 0.85rem;
+        border: 2px solid {STEEL_GREY}; color: {GREY_500};
+        background: {GREY_100}; transition: all 0.2s ease;
+    }}
+    .step-pill.active {{
+        border-color: {CARBON_BLACK}; color: white;
+        background: {CARBON_BLACK};
+        box-shadow: 0 4px 12px rgba(14, 15, 20, 0.25);
+    }}
+    .step-pill.done {{ border-color: {LIGHT_SAGE}; color: #3f7a5e; background: rgba(164,205,187,0.18); }}
+
+    .game-hero {{
+        position: relative;
+        overflow: hidden;
+        background: {CARBON_BLACK};
+        border-radius: 18px;
+        padding: 1.8rem 2rem;
+        margin-bottom: 1.2rem;
+        box-shadow: 0 8px 24px rgba(14, 15, 20, 0.3);
+    }}
+    .game-hero::before {{
+        content: "";
+        position: absolute;
+        inset: -20%;
+        background:
+            radial-gradient(ellipse 40% 60% at 12% 15%, rgba(255,105,105,0.35), transparent 60%),
+            radial-gradient(ellipse 45% 65% at 42% 5%, rgba(182,183,224,0.4), transparent 60%),
+            radial-gradient(ellipse 50% 70% at 78% 90%, rgba(164,205,187,0.4), transparent 60%),
+            radial-gradient(ellipse 40% 55% at 98% 35%, rgba(241,219,215,0.3), transparent 60%);
+        mix-blend-mode: screen;
+        pointer-events: none;
+    }}
+    .game-hero .hero-title {{
+        position: relative;
+        display: flex; align-items: center; gap: 0.75rem;
+    }}
+    .game-hero .hero-title img {{
+        height: 2.1rem; width: auto;
+        animation: wobble 2.6s ease-in-out infinite;
+    }}
+    @keyframes wobble {{
+        0%, 100% {{ transform: rotate(0deg); }}
+        25% {{ transform: rotate(-6deg); }}
+        75% {{ transform: rotate(6deg); }}
+    }}
+    .game-hero h1 {{
+        color: white;
+        font-weight: 500;
+        font-size: 2.1rem;
+        margin: 0;
+    }}
+    .game-hero p {{
+        position: relative;
+        color: rgba(255,255,255,0.85);
+        font-size: 0.98rem;
+        margin: 0.75rem 0 0 0;
+        max-width: 60rem;
+    }}
+
+    .howto-row {{ display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.2rem; }}
+    .howto-card {{
+        flex: 1 1 200px;
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        background: white;
+        border: 1px solid {STEEL_GREY};
+    }}
+    .howto-card .num {{
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.6rem; height: 1.6rem; border-radius: 50%;
+        background: {CARBON_BLACK};
+        color: white; font-weight: 700; font-size: 0.85rem;
+        margin-bottom: 0.4rem;
+    }}
+    .howto-card .txt {{ font-size: 0.85rem; color: {GREY_700}; }}
+
+    .stats-banner {{
+        display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center;
+        border-radius: 14px; padding: 0.75rem 1rem; margin-bottom: 1.2rem;
+        background: {PALE_YELLOW};
+        border: 1px solid {STEEL_GREY};
+        font-size: 0.9rem; font-weight: 500; color: {CARBON_BLACK};
+    }}
+
+    .stat-card {{
+        border: 1px solid {STEEL_GREY};
+        border-radius: 14px;
+        padding: 0.85rem 1rem;
+        text-align: center;
+        background: white;
+        transition: transform 0.15s ease;
+    }}
+    .stat-card:hover {{ transform: translateY(-2px); }}
+    .stat-card .label {{
+        font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.05em; color: {GREY_600};
+    }}
+    .stat-card .value {{
+        font-size: 1.6rem; font-weight: 600; line-height: 1.3; color: {CARBON_BLACK};
+    }}
+    .stat-card .comment {{
+        font-size: 0.78rem; font-style: italic; opacity: 0.75; margin-top: 0.35rem;
+    }}
+
+    @keyframes popIn {{
+        0% {{ transform: scale(0.4); opacity: 0; }}
+        60% {{ transform: scale(1.12); opacity: 1; }}
+        80% {{ transform: scale(0.96); }}
+        100% {{ transform: scale(1); }}
+    }}
+    @keyframes numberPop {{
+        0% {{ transform: scale(0.3); opacity: 0; }}
+        50% {{ transform: scale(1.25); opacity: 1; }}
+        75% {{ transform: scale(0.9); }}
+        100% {{ transform: scale(1); }}
+    }}
+    .result-card {{
         border-radius: 20px;
         padding: 1.8rem 2rem;
         text-align: center;
@@ -220,50 +273,51 @@ st.markdown(
         animation: popIn 0.5s cubic-bezier(.34,1.56,.64,1);
         box-shadow: 0 10px 28px rgba(0,0,0,0.18);
         margin-bottom: 1rem;
-    }
-    .result-card .big-number {
-        font-family: 'Baloo 2', sans-serif;
+    }}
+    .result-card .big-number {{
+        font-weight: 700;
         font-size: 4.6rem;
-        font-weight: 800;
         line-height: 1.1;
         display: inline-block;
         animation: numberPop 0.6s 0.15s cubic-bezier(.34,1.56,.64,1) backwards;
         text-shadow: 0 4px 18px rgba(0,0,0,0.25);
-    }
-    .result-card .tagline {
+    }}
+    .result-card .tagline {{
         font-size: 1.05rem;
         opacity: 0.95;
         margin-top: 0.3rem;
-    }
-    .battle-card {
+    }}
+
+    .battle-card {{
         border-radius: 14px;
         padding: 1rem;
         text-align: center;
-        border: 2px solid rgba(128,128,128,0.2);
-    }
-    .battle-card.winner { border-color: #0ca30c; background: rgba(12,163,12,0.08); }
-    .battle-card .name { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.03em; color: #898781; }
-    .battle-card .pct { font-size: 1.7rem; font-weight: 800; }
-    .badge-row { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;
-        margin: 0.75rem 0 1rem 0; }
-    .badge-pill {
-        font-family: 'Baloo 2', sans-serif;
+        border: 2px solid {STEEL_GREY};
+        background: white;
+    }}
+    .battle-card.winner {{ border-color: {LIGHT_SAGE}; background: rgba(164,205,187,0.15); }}
+    .battle-card .name {{ font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.03em; color: {GREY_600}; }}
+    .battle-card .pct {{ font-size: 1.7rem; font-weight: 700; color: {CARBON_BLACK}; }}
+
+    .badge-row {{ display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;
+        margin: 0.75rem 0 1rem 0; }}
+    .badge-pill {{
         font-size: 0.85rem;
-        font-weight: 700;
+        font-weight: 600;
         padding: 0.35rem 0.9rem;
         border-radius: 999px;
-        background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+        background: {CARBON_BLACK};
         color: white;
-        box-shadow: 0 3px 10px rgba(108, 92, 231, 0.3);
-    }
-    .suspense-text {
+    }}
+
+    .suspense-text {{
         text-align: center;
         font-size: 1.1rem;
-        font-weight: 600;
-        color: #6C5CE7;
+        font-weight: 500;
+        color: {CARBON_BLACK};
         padding: 1rem 0;
-    }
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -502,11 +556,12 @@ AVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is not None]
 UNAVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is None]
 
 st.markdown(
-    "<div class='game-hero'><h1><span class='wobble'>🎮</span> Build Your Own Portfolio</h1>"
+    f"<div class='game-hero'>"
+    f"<div class='hero-title'><img src='{_logo_data_uri()}' alt='Mobius'><h1>Build Your Own Portfolio</h1></div>"
     "<p>Assign weightings (and fees) across asset classes, then find out how likely your portfolio "
     "is to run out of money in retirement. Runs on the exact same simulation engine and market data "
     "as the main Mobius Wealth comparison tool - nothing here is a simplified stand-in. Play on your "
-    "own device - everyone's score lands on the shared leaderboard at the bottom of the page. 🏁</p>"
+    "own device - everyone's score lands on the shared leaderboard at the bottom of the page.</p>"
     "</div>",
     unsafe_allow_html=True,
 )
@@ -800,9 +855,12 @@ if st.session_state.get(result_key) is not None:
     fan_series = [
         ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
          st.session_state[f"game_paths_{granularity}"]),
-        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), "#6C5CE7",
+        # Grey for the competitor line, a deepened Cloud Blue for Mobius's own - the brand's raw
+        # Cloud Blue (#B6B7E0) is too pale to read clearly as a chart line at normal width, so
+        # this keeps the same hue family while giving it enough contrast to actually see.
+        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), GREY_700,
          four_seasons_result.paths),
-        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#00B4D8",
+        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#5B8FA8",
          better_result.paths),
     ]
     years_axis = np.arange(horizon + 1)
