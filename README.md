@@ -1,7 +1,7 @@
 # Mobius Wealth — Decumulation & Accumulation Simulator
 
 A Streamlit tool that compares retirement portfolios (Mobius's own fund lineups vs a
-competitor's, e.g. Aspen Advisers) on **probability of ruin** — the chance a pension pot runs
+competitor's)on **probability of ruin** — the chance a pension pot runs
 out of money before a client's plan is meant to end — using Monte Carlo simulation over real
 historical market data. Includes a full client-facing comparison app and a gamified internal
 version ("build your own portfolio, see if it survives").
