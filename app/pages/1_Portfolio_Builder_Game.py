@@ -43,7 +43,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
-from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES
+from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES, asset_class_weights, COMPARISON_GROUPS
 
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
 
@@ -771,6 +771,7 @@ if reveal:
     st.session_state[result_key] = result.prob_ruin
     st.session_state[f"game_return_{granularity}"] = median_return
     st.session_state[f"game_paths_{granularity}"] = result.paths
+    st.session_state[f"game_weights_{granularity}"] = weights
     st.session_state[f"game_badges_{granularity}"] = _badges(weights, custom_fee, selected_count, max_classes)
     _append_leaderboard({
         "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -875,6 +876,54 @@ if st.session_state.get(result_key) is not None:
         legend=dict(orientation="h", y=-0.15),
     )
     st.plotly_chart(fan, use_container_width=True)
+
+    st.markdown("#### 🧩 How diversification made the difference")
+    you_weights = st.session_state[f"game_weights_{granularity}"]
+    better_weights = asset_class_weights("Better")
+
+    def _grouped_weights(w):
+        """Rolls asset-class-level weights up onto the same like-for-like comparison groups the
+        main app uses (portfolios.COMPARISON_GROUPS), so a player's fund-store category picks and
+        Better's own holding-level construction can be compared on equal terms even though they're
+        built from completely different underlying labels."""
+        groups = w.index.map(lambda c: COMPARISON_GROUPS.get(c, c))
+        return w.groupby(groups).sum()
+
+    you_grouped = _grouped_weights(you_weights)
+    better_grouped = _grouped_weights(better_weights)
+    all_groups = sorted(set(you_grouped.index) | set(better_grouped.index),
+                         key=lambda g: -better_grouped.get(g, 0))
+
+    div_fig = go.Figure()
+    div_fig.add_trace(go.Bar(x=all_groups, y=[you_grouped.get(g, 0) * 100 for g in all_groups],
+                              name="You", marker_color=CORAL_RED))
+    div_fig.add_trace(go.Bar(
+        x=all_groups, y=[better_grouped.get(g, 0) * 100 for g in all_groups],
+        name=PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), marker_color="#5B8FA8",
+    ))
+    div_fig.update_layout(
+        barmode="group", yaxis_title="Weight (%)", height=360,
+        margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
+        legend=dict(orientation="h", y=-0.3), xaxis_tickangle=-30,
+    )
+    st.plotly_chart(div_fig, use_container_width=True)
+
+    you_class_count = int((you_grouped > 0.001).sum())
+    better_class_count = int((better_grouped > 0.001).sum())
+    if not beat_better:
+        st.info(
+            f"🧩 Mobius Better spreads its 100% across **{better_class_count} asset classes**; you used "
+            f"**{you_class_count}**. That spread is a big part of why it holds up better here - when one "
+            "asset class has a bad run, the others usually aren't all falling at the same time, so the "
+            "pot doesn't take the full hit."
+        )
+    else:
+        st.info(
+            f"🧩 You used **{you_class_count} asset class{'es' if you_class_count != 1 else ''}** against "
+            f"Mobius Better's **{better_class_count}** - and still came out ahead this time. Diversification "
+            "improves your odds across many possible futures; it doesn't guarantee the outcome of any "
+            "single one."
+        )
 
     if st.button("🔁 Build another portfolio"):
         del st.session_state[result_key]
