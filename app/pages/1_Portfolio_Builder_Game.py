@@ -25,6 +25,7 @@ that actually matters still reads the same way in both places.
 """
 from __future__ import annotations
 
+import html
 import sys
 import time
 from datetime import datetime
@@ -182,6 +183,9 @@ st.markdown(
     .stat-card .value {
         font-size: 1.6rem; font-weight: 800; line-height: 1.3;
     }
+    .stat-card .comment {
+        font-size: 0.78rem; font-style: italic; opacity: 0.75; margin-top: 0.35rem;
+    }
     div[data-testid="stButton"] > button[kind="primary"] {
         font-family: 'Baloo 2', sans-serif;
         font-size: 1.1rem;
@@ -197,23 +201,34 @@ st.markdown(
         box-shadow: 0 6px 18px rgba(108, 92, 231, 0.4);
     }
     @keyframes popIn {
-        0% { transform: scale(0.85); opacity: 0; }
-        100% { transform: scale(1); opacity: 1; }
+        0% { transform: scale(0.4); opacity: 0; }
+        60% { transform: scale(1.12); opacity: 1; }
+        80% { transform: scale(0.96); }
+        100% { transform: scale(1); }
+    }
+    @keyframes numberPop {
+        0% { transform: scale(0.3); opacity: 0; }
+        50% { transform: scale(1.25); opacity: 1; }
+        75% { transform: scale(0.9); }
+        100% { transform: scale(1); }
     }
     .result-card {
         border-radius: 20px;
         padding: 1.8rem 2rem;
         text-align: center;
         color: white;
-        animation: popIn 0.35s ease-out;
+        animation: popIn 0.5s cubic-bezier(.34,1.56,.64,1);
         box-shadow: 0 10px 28px rgba(0,0,0,0.18);
         margin-bottom: 1rem;
     }
     .result-card .big-number {
         font-family: 'Baloo 2', sans-serif;
-        font-size: 3.4rem;
+        font-size: 4.6rem;
         font-weight: 800;
         line-height: 1.1;
+        display: inline-block;
+        animation: numberPop 0.6s 0.15s cubic-bezier(.34,1.56,.64,1) backwards;
+        text-shadow: 0 4px 18px rgba(0,0,0,0.25);
     }
     .result-card .tagline {
         font-size: 1.05rem;
@@ -382,14 +397,49 @@ def _clear_leaderboard():
     pd.DataFrame(columns=LEADERBOARD_COLUMNS).to_csv(LEADERBOARD_CSV, index=False)
 
 
-def _stat_card(label, value, color=None, icon=None):
+def _stat_card(label, value, color=None, icon=None, comment=None):
     color_style = f"color:{color};" if color else ""
     icon_html = f"{icon} " if icon else ""
+    comment_html = f"<div class='comment'>{comment}</div>" if comment else ""
     st.markdown(
         f"<div class='stat-card'><div class='label'>{icon_html}{label}</div>"
-        f"<div class='value' style='{color_style}'>{value}</div></div>",
+        f"<div class='value' style='{color_style}'>{value}</div>{comment_html}</div>",
         unsafe_allow_html=True,
     )
+
+
+def _return_comment(median_return):
+    pct = median_return * 100
+    if pct < -2:
+        return "😬 Shrinking faster than milk left out overnight."
+    elif pct < 0:
+        return "📉 Technically still losing, just... politely."
+    elif pct < 2:
+        return "🐢 Slow and steady. Very steady."
+    elif pct < 5:
+        return "🙂 Perfectly respectable. Nothing to write home about."
+    elif pct < 8:
+        return "😎 Now we're talking."
+    else:
+        return "🚀 To the moon (or a very lucky draw of markets)."
+
+
+def _outcome_comment(median_outcome, starting_pot):
+    if starting_pot <= 0:
+        return ""
+    ratio = median_outcome / starting_pot
+    if ratio < 0.05:
+        return "💸 Down to fumes."
+    elif ratio < 0.5:
+        return "😰 Noticeably thinner than you started."
+    elif ratio < 1.0:
+        return "🙂 Smaller, but still standing."
+    elif ratio < 2.0:
+        return "👍 Held its own and then some."
+    elif ratio < 4.0:
+        return "🏰 You could buy a small castle."
+    else:
+        return "🤑 Someone's leaving a very generous inheritance."
 
 
 def _tier(prob_ruin):
@@ -613,7 +663,7 @@ with fee_col:
     _stat_card("Weighted fee", f"{live_fee_pct:.2f}% / {max_fee_pct:.2f}%",
                COLOR_GOOD if fee_ok else COLOR_BAD if total_weight > 0 else None, icon="💷")
 with name_col:
-    _stat_card("Team name set", "Yes ✅" if name_ok else "No ❌",
+    _stat_card("Team name", html.escape(team_name.strip()) if name_ok else "Not set yet",
                COLOR_GOOD if name_ok else COLOR_BAD, icon="🏷️")
 
 if not weights_ok:
@@ -687,17 +737,19 @@ if st.session_state.get(result_key) is not None:
         f"</div>",
         unsafe_allow_html=True,
     )
-    if prob_ruin < 0.05:
+    if prob_ruin < 0.15:
         st.balloons()
 
     median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
+    median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
     return_col1, return_col2 = st.columns(2)
     with return_col1:
         _stat_card("Median annual return", f"{median_return * 100:+.1f}%",
-                   COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈")
+                   COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈",
+                   comment=_return_comment(median_return))
     with return_col2:
-        median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
-        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰")
+        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰",
+                   comment=_outcome_comment(median_outcome, float(pot)))
 
     badges = st.session_state.get(f"game_badges_{granularity}", [])
     if badges:
