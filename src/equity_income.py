@@ -26,8 +26,12 @@ from engine import run_simulation, downside_stats, ClientProfile
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 EQUITY_DIR = DATA_DIR / "equities"
-EQUITY_RETURNS_CSV = EQUITY_DIR / "uk_shares_returns.csv"
-SHARE_METADATA_CSV = EQUITY_DIR / "share_metadata.csv"
+# Real Bloomberg-sourced data (task 12) - swapped in from the earlier placeholder/synthetic files
+# (uk_shares_returns.csv / share_metadata.csv, still on disk for reference) now that a real export
+# exists. Every downstream function (rank_shares, find_best_baskets, evaluate_basket,
+# share_correlation_matrix) is unchanged - only the input data changed.
+EQUITY_RETURNS_CSV = EQUITY_DIR / "uk_shares_returns_real.csv"
+SHARE_METADATA_CSV = EQUITY_DIR / "share_metadata_real.csv"
 
 # Illustrative flat platform/dealing fee, pa - NOT sourced from anything, just a placeholder so
 # individual shares aren't compared "fee-free" against the rest of the project's portfolios (which

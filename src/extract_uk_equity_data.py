@@ -41,14 +41,24 @@ If you'd rather hand this off, this docstring + data/equities/uk_shares_universe
 everything a colleague with terminal access needs to reproduce the pull.
 ------------------------------------------------------------------------------------------------
 """
+import re
 from pathlib import Path
 
 import openpyxl
 import pandas as pd
 
-# TODO: point this at your real Bloomberg export once produced (see instructions above).
-SRC = "PASTE_PATH_TO_YOUR_BLOOMBERG_EXPORT_HERE.xlsx"
-SHEET_NAME = "Bloomberg Direct Returns"  # matches extract_data.py's convention - rename if different
+SRC = r"C:\Users\YahampathH\Downloads\bloomberg_monthly_returns_.xlsx"
+SHEET_NAME = "Monthly Returns"  # this export's actual sheet name (template default), not "Bloomberg Direct Returns"
+
+# DAY_TO_DAY_TOT_RETURN_GROSS_DVDS can come back in PERCENTAGE POINTS (e.g. -16.9045 meaning
+# -16.9045%) or already in the decimal convention (-0.169045) the rest of this model uses (see
+# data/equities/raise_index_returns.csv) DEPENDING ON HOW EACH CELL WAS PULLED - confirmed by
+# inspecting one real export where one ticker's column was in percentage points and the other 15
+# were already decimal, i.e. this is NOT consistent across a single file and can't be fixed with one
+# fixed divisor. Detected and corrected per-column below instead (see _fix_scale).
+PERCENT_MEDIAN_ABS_THRESHOLD = 1.0  # real monthly equity returns essentially never exceed 100% (1.0
+                                     # in decimal terms), so a column whose typical |value| sits above
+                                     # this is almost certainly in percentage points, not decimal
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "data" / "equities"
 CANDIDATES_CSV = OUT_DIR / "uk_shares_universe_candidates.csv"
@@ -69,7 +79,10 @@ def extract(src=SRC, sheet_name=SHEET_NAME):
     while col <= max_col:
         header = ws.cell(row=1, column=col).value
         if header:
-            blocks.append((col, str(header).strip()))
+            # Guards against a stray typo'd header (e.g. "SVT LN Equityb") breaking the metadata
+            # match below - truncates anything trailing immediately after "Equity" or "Index".
+            clean = re.sub(r"((?:Equity|Index))\S*$", r"\1", str(header).strip())
+            blocks.append((col, clean))
         col += 1
 
     print(f"Found {len(blocks)} data blocks in {src}")
@@ -82,23 +95,39 @@ def extract(src=SRC, sheet_name=SHEET_NAME):
             v = ws.cell(row=r, column=start_col + 1).value
             if d is None:
                 continue
+            # Bloomberg errors (e.g. "#N/A") come back as strings - treated as missing, not coerced.
+            vals.append(v if isinstance(v, (int, float)) else None)
             dates.append(pd.Timestamp(d))
-            vals.append(v)
         norm_dates = pd.DatetimeIndex(dates).to_period("M").to_timestamp("M")
-        s = pd.Series(vals, index=norm_dates, name=name)
+        s = pd.Series(vals, index=norm_dates, name=name, dtype=float)
         s = s[~s.index.duplicated(keep="last")].sort_index()
         series[name] = s
 
-    return pd.DataFrame(series)
+    return _fix_scale(pd.DataFrame(series))
 
 
-def match_metadata(columns) -> pd.DataFrame:
-    """Matches extracted block-header names back to the candidate universe's Ticker/Company/Sector
-    so share_metadata_real.csv is populated automatically wherever the header naming lines up -
-    anything left unmatched is printed so it can be fixed by hand (Bloomberg block headers won't
-    always come back as exactly 'Ticker' - e.g. they may be the company name or 'TICKER LN Equity')."""
+def _fix_scale(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-column: divides by 100 only if that column's own typical magnitude looks like percentage
+    points rather than decimal (see PERCENT_MEDIAN_ABS_THRESHOLD) - handles a single export mixing
+    both conventions across different columns, which a single fixed divisor cannot."""
+    for col in df.columns:
+        med_abs = df[col].abs().median()
+        if med_abs > PERCENT_MEDIAN_ABS_THRESHOLD:
+            df[col] = df[col] / 100.0
+            print(f"  {col}: median |value| was {med_abs:.2f} -> treated as percentage points, divided by 100")
+    return df
+
+
+def match_metadata(columns) -> tuple[pd.DataFrame, dict]:
+    """Matches extracted block-header names (e.g. "ULVR LN Equity") back to the candidate universe's
+    short Ticker/Company/Sector so share_metadata_real.csv is populated automatically wherever the
+    header naming lines up - anything left unmatched is printed so it can be fixed by hand. Also
+    returns a {block_header: short_ticker} rename map so uk_shares_returns_real.csv's columns read
+    as the short code ("ULVR") like every other file in the project (placeholder data, portfolio
+    holdings, etc.), not the full Bloomberg security string."""
     candidates = pd.read_csv(CANDIDATES_CSV)
     rows = []
+    rename = {}
     unmatched = []
     for col in columns:
         key = col.strip().upper()
@@ -109,13 +138,14 @@ def match_metadata(columns) -> pd.DataFrame:
         ]
         if len(match):
             row = match.iloc[0]
-            rows.append({"Ticker": col, "Company": row["Company"], "Sector": row["Sector"]})
+            rows.append({"Ticker": row["Ticker"], "Company": row["Company"], "Sector": row["Sector"]})
+            rename[col] = row["Ticker"]
         else:
             unmatched.append(col)
             rows.append({"Ticker": col, "Company": col, "Sector": "Unknown - fix by hand"})
     if unmatched:
         print("Could not auto-match metadata for:", unmatched, "- edit share_metadata_real.csv by hand.")
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), rename
 
 
 def main():
@@ -127,7 +157,8 @@ def main():
         )
         return
     df = extract()
-    meta = match_metadata(df.columns)
+    meta, rename = match_metadata(df.columns)
+    df = df.rename(columns=rename)
 
     returns_out = OUT_DIR / "uk_shares_returns_real.csv"
     meta_out = OUT_DIR / "share_metadata_real.csv"
