@@ -66,8 +66,9 @@ Two pages, one Streamlit app, both reading the same `data/` and `src/`:
 - **`app/pages/1_Portfolio_Builder_Game.py`** — a gamified internal version. Players assign
   weights and fees across the Mobius fund store's own asset-class sub-categories (or finer
   individual building blocks), hit reveal, and see only their probability of ruin — plus a
-  shared cross-device leaderboard, badges, a benchmark comparison against Four Seasons/Better,
-  and an interactive fan chart. Built for a live company-wide activity, not client use.
+  shared cross-device leaderboard, badges, a benchmark comparison against Mobius Better (only -
+  deliberately no competitor portfolio in an internal game), and an interactive fan chart. Built
+  for a live company-wide activity, not client use.
 
 ## How it fits together
 

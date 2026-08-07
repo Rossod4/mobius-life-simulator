@@ -351,8 +351,9 @@ cpi = load_cpi(asset_df)
 def _benchmark_result(name, _asset_df, _cpi, profile):
     """Cached per (portfolio name, profile) - independent of any player's own allocation, so every
     team playing with the same host-set client profile shares one cached run instead of
-    re-simulating Four Seasons/Better on every single reveal click. Returns the full SimResult
-    (not just prob_ruin) so its simulated paths can feed the fan chart too."""
+    re-simulating Better on every single reveal click. Returns the full SimResult (not just
+    prob_ruin) so its simulated paths can feed the fan chart too. Only ever called with "Better" -
+    deliberately not any competitor portfolio, since this is an internal Mobius game."""
     return run_simulation(name, _asset_df, _cpi, profile, method="stationary_block",
                            n_sims=2000, seed=42)
 
@@ -816,19 +817,18 @@ if st.session_state.get(result_key) is not None:
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
                              initial_annual_spend=float(spend))
-    four_seasons_result = _benchmark_result("Four Seasons", asset_df, cpi, profile)
     better_result = _benchmark_result("Better", asset_df, cpi, profile)
-    four_seasons_ruin = four_seasons_result.prob_ruin
     better_ruin = better_result.prob_ruin
 
     st.markdown("#### ⚔️ How you compare")
+    st.caption("Benchmarked against Mobius Better - the tool's own most diversified construction, "
+               "not a competitor's fund - as a guide to how well (or badly) you did.")
     contenders = [
         ("You", prob_ruin),
-        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), four_seasons_ruin),
         (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), better_ruin),
     ]
     best_ruin = min(p for _, p in contenders)
-    bcols = st.columns(3)
+    bcols = st.columns(2)
     for col, (label, p) in zip(bcols, contenders):
         with col:
             is_winner = p == best_ruin
@@ -839,27 +839,22 @@ if st.session_state.get(result_key) is not None:
                 f"<div class='pct'>{p * 100:.1f}%</div></div>",
                 unsafe_allow_html=True,
             )
-    beat_fs = prob_ruin < four_seasons_ruin
     beat_better = prob_ruin < better_ruin
     if beat_better:
         st.success("🎉 You beat Mobius Better - the tool's own most diversified construction. Impressive.")
-    elif beat_fs:
-        st.info("👍 You beat Aspen Four Seasons, but Mobius Better still edges you out.")
     else:
-        st.info("📉 Both benchmark portfolios currently beat you - room to improve.")
+        st.info("📉 Mobius Better currently beats you - room to improve.")
 
-    st.markdown("#### 📊 How your pot could evolve - everyone, side by side")
+    st.markdown("#### 📊 How your pot could evolve")
     st.caption("Interactive - hover for exact values, drag to zoom. The bold line is each portfolio's "
                "median (typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
     fan = go.Figure()
     fan_series = [
         ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
          st.session_state[f"game_paths_{granularity}"]),
-        # Grey for the competitor line, a deepened Cloud Blue for Mobius's own - the brand's raw
-        # Cloud Blue (#B6B7E0) is too pale to read clearly as a chart line at normal width, so
-        # this keeps the same hue family while giving it enough contrast to actually see.
-        (PORTFOLIO_META.get("Four Seasons", {}).get("DisplayName", "Aspen Four Seasons"), GREY_700,
-         four_seasons_result.paths),
+        # A deepened Cloud Blue for Mobius's own line - the brand's raw Cloud Blue (#B6B7E0) is too
+        # pale to read clearly as a chart line at normal width, so this keeps the same hue family
+        # while giving it enough contrast to actually see.
         (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#5B8FA8",
          better_result.paths),
     ]
