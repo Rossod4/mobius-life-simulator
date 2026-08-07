@@ -33,6 +33,7 @@ brand pastel wouldn't have enough contrast to read clearly), not a generic/inven
 from __future__ import annotations
 
 import html
+import re
 import sys
 import time
 from datetime import date, datetime
@@ -300,6 +301,39 @@ st.markdown(
         font-size: 1.05rem;
         opacity: 0.95;
         margin-top: 0.3rem;
+    }}
+
+    .champion-card {{
+        border-radius: 22px;
+        padding: 2rem 2rem 1.7rem;
+        text-align: center;
+        color: white;
+        background: linear-gradient(135deg, {COLOR_WARN}, #E8C860);
+        animation: popIn 0.55s cubic-bezier(.34,1.56,.64,1);
+        box-shadow: 0 14px 34px rgba(201,162,39,0.35);
+        margin: 0.75rem 0 1.1rem;
+    }}
+    .champion-card .trophy {{
+        font-size: 2.6rem;
+        animation: numberPop 0.6s 0.1s cubic-bezier(.34,1.56,.64,1) backwards;
+    }}
+    .champion-card .champion-name {{
+        font-weight: 800;
+        font-size: 2.1rem;
+        line-height: 1.25;
+        margin: 0.15rem 0 0.7rem;
+        text-shadow: 0 4px 18px rgba(0,0,0,0.25);
+    }}
+    .champion-card .champion-stats {{
+        display: flex; justify-content: center; gap: 1.8rem; flex-wrap: wrap;
+        margin-top: 0.4rem;
+    }}
+    .champion-card .champion-stat-value {{
+        font-size: 1.4rem; font-weight: 700;
+    }}
+    .champion-card .champion-stat-label {{
+        font-size: 0.66rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.05em; opacity: 0.85;
     }}
 
     .battle-card {{
@@ -1015,11 +1049,52 @@ else:
     display_df = ranked.drop(columns=["Allocation"], errors="ignore")
     st.dataframe(display_df.style.apply(_highlight_podium, axis=1), hide_index=True, use_container_width=True)
 
-    if st.button("🏅 Reveal the winning allocation"):
+    if st.button("👑 Crown the champion", use_container_width=True):
+        crown_slot = st.empty()
+        for _msg in ["🥁 Drumroll please...", "🔍 Pulling up the #1 portfolio...", "👑 Crowning the champion..."]:
+            crown_slot.markdown(f"<div class='suspense-text'>{_msg}</div>", unsafe_allow_html=True)
+            time.sleep(0.4)
+        crown_slot.empty()
+        st.balloons()
+
         winner = ranked.iloc[0]
         alloc = winner.get("Allocation")
-        if isinstance(alloc, str) and alloc.strip():
-            st.info(f"**{winner['Team']}** ({winner['Probability of ruin']:.1f}% probability of ruin) "
-                    f"built: {alloc}")
+        # Allocation strings are built at reveal time as "Label NN%, Label NN%, ..." (see
+        # allocation_str above) - parse them back into (label, weight) pairs for the champion
+        # card's chart rather than showing the raw comma-separated text.
+        pairs = re.findall(r"([^,]+?)\s+(\d+(?:\.\d+)?)%", alloc) if isinstance(alloc, str) and alloc.strip() else []
+
+        st.markdown(
+            f"<div class='champion-card'>"
+            f"<div class='trophy'>🏆</div>"
+            f"<div style='font-size:0.8rem; font-weight:700; text-transform:uppercase; "
+            f"letter-spacing:0.08em; opacity:0.9;'>Champion portfolio</div>"
+            f"<div class='champion-name'>{html.escape(str(winner['Team']))}</div>"
+            f"<div class='champion-stats'>"
+            f"<div><div class='champion-stat-value'>{winner['Probability of ruin']:.1f}%</div>"
+            f"<div class='champion-stat-label'>Probability of ruin</div></div>"
+            f"<div><div class='champion-stat-value'>{winner['Median annual return %']:.1f}%</div>"
+            f"<div class='champion-stat-label'>Median annual return</div></div>"
+            f"<div><div class='champion-stat-value'>{int(winner['Asset classes used'])}</div>"
+            f"<div class='champion-stat-label'>Asset classes used</div></div>"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+
+        if pairs:
+            pairs_sorted = sorted(pairs, key=lambda p: -float(p[1]))
+            champ_labels = [p[0].strip() for p in pairs_sorted]
+            champ_values = [float(p[1]) for p in pairs_sorted]
+            champ_fig = go.Figure(go.Bar(
+                x=champ_values, y=champ_labels, orientation="h", marker_color=COLOR_WARN,
+                text=[f"{v:.0f}%" for v in champ_values], textposition="outside",
+            ))
+            champ_fig.update_layout(
+                height=max(220, 60 + 34 * len(champ_labels)),
+                margin=dict(l=10, r=30, t=10, b=10),
+                xaxis_title="Weight (%)", xaxis_range=[0, max(champ_values) * 1.2],
+                yaxis=dict(autorange="reversed"),
+            )
+            st.plotly_chart(champ_fig, use_container_width=True)
         else:
             st.caption("No allocation recorded for the current #1 (played before this feature was added).")
