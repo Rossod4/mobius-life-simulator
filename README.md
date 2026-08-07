@@ -21,10 +21,11 @@ how to run it, and where the loose ends are, not just what's "new" in the latest
 4. [Repository map](#repository-map)
 5. [`src/` script inventory](#src-script-inventory)
 6. [Data files](#data-files)
-7. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
-8. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
-9. [Deployment](#deployment)
-10. [Suggested next steps](#suggested-next-steps)
+7. [Adding a new portfolio](#adding-a-new-portfolio)
+8. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
+9. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
+10. [Deployment](#deployment)
+11. [Suggested next steps](#suggested-next-steps)
 
 ## Quick start
 
@@ -191,6 +192,63 @@ main app):**
   for the equity-swap sensitivity tests. `*_real.csv` files are genuine Bloomberg Terminal
   exports; files without that suffix may be earlier/placeholder versions — check the
   extraction script's docstring if unsure which is current.
+
+## Adding a new portfolio
+
+**Easiest path — use the app itself**: sidebar → "Edit data" tab → "➕ Add a new portfolio",
+then "✏️ Edit portfolio holdings & fees" to add its rows, then click "💾 Save as new default"
+to write it back to the CSVs below. This is the recommended way for anyone who isn't
+comfortable hand-editing CSVs — it enforces the right shapes for you and the asset-class
+dropdown only offers valid options.
+
+**Manual path — edit the CSVs directly** (useful for bulk edits or scripting):
+
+**1. `data/portfolio_holdings.csv`** — one row per holding, columns:
+
+| Column | Format | Notes |
+|---|---|---|
+| `Portfolio` | short internal key, e.g. `Better` | Every row for the same portfolio must use the exact same string — this is what groups rows together. Must be unique per portfolio (don't reuse an existing key unless you're intentionally replacing it). |
+| `Holding` | free text, e.g. `Vanguard FTSE U.K. All Share Index Fund` | Just a label, not used for lookups — can be the fund name or, for asset-class-level portfolios like "Better", the same as the AssetClass. |
+| `AssetClass` | must **exactly match** a `Label` in `data/asset_class_map.csv` | Case-sensitive, exact string match. If it doesn't match, the simulation will raise a `KeyError` the first time this portfolio is run — see step 3 below if you need a class that doesn't exist yet. |
+| `Weight` | decimal fraction, e.g. `0.015` for 1.5% | **Not** a percentage (`1.5`) and not written as `1.5%`. All of one portfolio's rows should sum to `1.0` — the app carries a mismatched total through as-is with a warning rather than erroring, but a real comparison needs it to actually be 100%. |
+| `OCF` | decimal fraction, e.g. `0.0012` for 0.12% pa | Same decimal convention as Weight, not a percentage. |
+| `ISIN` | optional, can be blank | Not used by the simulation, just a reference. |
+
+Example new row:
+```csv
+Portfolio,Holding,AssetClass,Weight,OCF,ISIN
+My New Fund,L&G Global Equity Index Fund,Global Equities,0.60,0.0015,GB00XXXXXXXX
+My New Fund,Vanguard Global Bond Fund,Global Agg Bonds,0.40,0.0015,
+```
+
+**2. `data/portfolio_meta.csv`** — one row per portfolio (optional but recommended; a
+portfolio missing here still works, just falls back to plain defaults):
+
+| Column | Format | Notes |
+|---|---|---|
+| `Portfolio` | must exactly match the `Portfolio` key used in `portfolio_holdings.csv` | |
+| `DisplayName` | human-readable name shown in the app/charts/PDF, e.g. `Mobius Better` | Falls back to the internal `Portfolio` key if omitted. |
+| `Owner` | `Mobius` or `Competitor` | Drives colour-coding throughout the app. Falls back to `Competitor` if omitted. |
+| `Provider` | fund house name, e.g. `Legal & General` | Used in section captions and the PDF export. Falls back to `DisplayName` if omitted. |
+
+**3. Only if introducing a genuinely new asset class** (not just a new portfolio built from
+existing classes): you need real historical return data for it before it can be used at all.
+
+  a. Add a monthly total-return column (decimal fractions, e.g. `0.0123` = 1.23%, indexed by
+     month-end date) to `data/asset_class_returns.csv` — as long a history as possible, ideally
+     covering the same 1999/2000–2026 window as everything else, though a shorter series still
+     works (it just narrows the usable overlap window for any portfolio holding it — see the
+     "Better" portfolio's own 2001-2025 window as an example of this trade-off).
+  b. Add a row to `data/asset_class_map.csv`: `Label` (the friendly name you'll use in
+     `AssetClass` above) → `BloombergColumn` (must exactly match the new column header from
+     step (a)).
+  c. Optional: add a row to `data/asset_class_comparison_groups.csv` (`AssetClass` →
+     `ComparisonGroup`) if you want it rolled up into an existing like-for-like comparison
+     bucket rather than standing alone as its own group.
+
+  This is exactly the gap behind the Portfolio Builder Game's 7 "coming soon" fund-store
+  categories (see [Known gaps](#known-gaps--where-things-were-left-off)) — they're waiting on
+  step (a), real return data, before they can be switched on.
 
 ## Key methodology notes and assumptions
 
