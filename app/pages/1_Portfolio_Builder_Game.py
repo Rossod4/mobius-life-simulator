@@ -137,8 +137,8 @@ st.markdown(
         color: {CARBON_BLACK};
     }}
 
-    /* Card-wrap the allocation editor and leaderboard tables so they feel like designed panels
-       rather than plain spreadsheet grids. */
+    /* Card-wrap the leaderboard table so it feels like a designed panel rather than a plain
+       spreadsheet grid (the allocation inputs below are sliders, not a data grid). */
     [data-testid="stDataFrame"] {{
         border-radius: 14px;
         overflow: hidden;
@@ -650,33 +650,33 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-editor_key = f"game_editor_{granularity}"
-if editor_key not in st.session_state:
-    st.session_state[editor_key] = pd.DataFrame({
-        "Asset class": labels,
-        "Weight %": [0.0] * len(labels),
-        "Fee % pa": [0.10] * len(labels),
-    })
-
 team_name = st.text_input("🏷️ Team / player name", key="team_name",
                            help="Shown on the leaderboard - pick something your team will recognise.")
 
 st.markdown("#### 🏗️ Your allocation")
-st.caption("Set a weight for each asset class you want to hold (they must add up to 100%), and the "
-           "annual fee you're assuming for each. Leave a row at 0% to leave it out entirely.")
-edited = st.data_editor(
-    st.session_state[editor_key],
-    key=f"editor_widget_{granularity}",
-    num_rows="fixed",
-    hide_index=True,
-    use_container_width=True,
-    column_config={
-        "Asset class": st.column_config.TextColumn(disabled=True),
-        "Weight %": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, step=0.5, format="%.1f"),
-        "Fee % pa": st.column_config.NumberColumn(min_value=0.0, max_value=3.0, step=0.01, format="%.2f"),
-    },
-)
-st.session_state[editor_key] = edited
+st.caption("Drag a slider for each asset class you want to hold (they must add up to 100%), and set "
+           "the annual fee you're assuming for each. Leave a slider at 0% to leave it out entirely.")
+
+weight_values, fee_values = [], []
+header_l, header_w, header_f = st.columns([2.5, 5.5, 1.5])
+with header_w:
+    st.caption("WEIGHT %")
+with header_f:
+    st.caption("FEE % PA")
+for label in labels:
+    row_l, row_w, row_f = st.columns([2.5, 5.5, 1.5])
+    with row_l:
+        st.markdown(f"<div style='padding-top:0.6rem;'>{label}</div>", unsafe_allow_html=True)
+    with row_w:
+        w = st.slider(label, 0.0, 100.0, 0.0, step=0.5, key=f"w_{granularity}_{label}",
+                       label_visibility="collapsed")
+    with row_f:
+        f = st.number_input(label, 0.0, 3.0, 0.10, step=0.01, key=f"f_{granularity}_{label}",
+                             label_visibility="collapsed")
+    weight_values.append(w)
+    fee_values.append(f)
+
+edited = pd.DataFrame({"Asset class": labels, "Weight %": weight_values, "Fee % pa": fee_values})
 
 if is_fund_store and UNAVAILABLE_CATEGORIES:
     st.caption(
