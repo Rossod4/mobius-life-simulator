@@ -22,9 +22,10 @@ Styled with the real Mobius brand identity (Mobius Brand Identity Overview v1.02
 mark and Inter typeface, see the brand palette constants below and app/assets/mobius_logo_icon.png)
 rather than an invented theme, while still being more playful than the main comparison tool (big
 animated reveal card, medal leaderboard, confetti) since this page is a game, not a client-facing
-pitch deck. Reuses the main app's own probability-of-ruin colour coding (green/amber/red) - kept
-separate from the brand palette since it's a functional risk signal, not a decorative choice - so
-the one number that actually matters still reads the same way in both places.
+pitch deck. Every colour on this page - including the probability-of-ruin green/amber/red, which
+reuses the main app's own risk-colour coding so the one number that actually matters still reads
+the same way in both places - is now derived from the brand's own palette (deepened where a raw
+brand pastel wouldn't have enough contrast to read clearly), not a generic/invented one.
 """
 from __future__ import annotations
 
@@ -47,12 +48,14 @@ from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
 
 # Same risk colours as the main app's probability-of-ruin cards (app.py's ruin_color logic) -
-# consistent meaning across both pages. Kept separate from the brand palette below: these are a
-# functional red/amber/green risk convention, not a decorative brand choice, and the result
-# card's white-on-colour text needs the extra saturation these have vs. the brand's soft pastels.
-COLOR_GOOD = "#0ca30c"
-COLOR_WARN = "#c98500"
-COLOR_BAD = "#d03b3b"
+# consistent meaning across both pages. Still a distinct set from the brand palette below since
+# they carry a specific green/gold/red risk meaning a decorative brand colour can't override, but
+# each is now derived from the matching brand secondary colour (Light Sage/Pale Yellow/Coral Red)
+# deepened just enough for real contrast as text or white-on-colour backgrounds - not the generic
+# traffic-light hues this used before.
+COLOR_GOOD = "#3f7a5e"   # deepened Light Sage
+COLOR_WARN = "#C9A227"   # deepened Pale Yellow (same value as app.py's MOBIUS_PALETTE)
+COLOR_BAD = "#D94A4A"    # deepened Coral Red
 
 # Real Mobius brand palette (Mobius Brand Identity Overview v1.02) - see README for the source
 # PDF. Primary colours are Carbon Black + white; secondary colours are soft pastels used as
@@ -158,7 +161,7 @@ st.markdown(
         background: {CARBON_BLACK};
         box-shadow: 0 4px 12px rgba(14, 15, 20, 0.25);
     }}
-    .step-pill.done {{ border-color: {LIGHT_SAGE}; color: #3f7a5e; background: rgba(164,205,187,0.18); }}
+    .step-pill.done {{ border-color: {LIGHT_SAGE}; color: {COLOR_GOOD}; background: rgba(164,205,187,0.18); }}
 
     .game-hero {{
         position: relative;
@@ -893,7 +896,10 @@ else:
     if current:
         ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
 
-    _row_colors = {0: "rgba(255,215,0,0.20)", 1: "rgba(192,192,192,0.20)", 2: "rgba(205,127,50,0.18)"}
+    # Podium tints derived from the brand palette rather than generic gold/silver/bronze web
+    # colours: deepened Pale Yellow for 1st, Steel Grey for 2nd (already named "Steel" - a neat
+    # fit for silver), deepened Pale Pink for 3rd.
+    _row_colors = {0: "rgba(201,162,39,0.20)", 1: "rgba(204,204,213,0.35)", 2: "rgba(217,143,163,0.20)"}
 
     def _highlight_podium(row):
         style = f"background-color: {_row_colors[row.name]}" if row.name in _row_colors else ""

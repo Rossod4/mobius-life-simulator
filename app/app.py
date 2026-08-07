@@ -360,13 +360,13 @@ def render_comparison_section(title, caption, names, sim_results, hist_profile_k
                 if show_ruin:
                     ruin_pct = s["Probability of ruin"] * 100
                     if ruin_pct < 10:
-                        ruin_color = "#0ca30c"   # good
+                        ruin_color = "#3f7a5e"   # good - deepened brand Light Sage
                     elif ruin_pct < 30:
-                        ruin_color = "#c98500"   # warning (darkened from the standard warning hue for contrast on white)
+                        ruin_color = "#C9A227"   # warning - deepened brand Pale Yellow
                     else:
-                        ruin_color = "#d03b3b"   # critical
+                        ruin_color = "#D94A4A"   # critical - deepened brand Coral Red (darkened for contrast on white)
                     st.markdown(
-                        "<div style='font-size:0.72rem; color:#898781; font-weight:600; "
+                        "<div style='font-size:0.72rem; color:#787A87; font-weight:600; "
                         "text-transform:uppercase; letter-spacing:0.04em; margin-top:6px;'>"
                         "Probability of ruin</div>"
                         f"<div style='font-size:2.3rem; font-weight:800; color:{ruin_color}; "
@@ -465,9 +465,9 @@ def render_fee_sensitivity_section(names, asset_df, cpi, profile_kwargs, method,
                     unsafe_allow_html=True,
                 )
                 ruin_pct = s["Probability of ruin"] * 100
-                ruin_color = "#0ca30c" if ruin_pct < 10 else "#c98500" if ruin_pct < 30 else "#d03b3b"
+                ruin_color = "#3f7a5e" if ruin_pct < 10 else "#C9A227" if ruin_pct < 30 else "#D94A4A"
                 st.markdown(
-                    "<div style='font-size:0.72rem; color:#898781; font-weight:600; "
+                    "<div style='font-size:0.72rem; color:#787A87; font-weight:600; "
                     "text-transform:uppercase; letter-spacing:0.04em; margin-top:6px;'>"
                     "Probability of ruin</div>"
                     f"<div style='font-size:2.3rem; font-weight:800; color:{ruin_color}; "
@@ -1932,7 +1932,7 @@ if show_accum or show_decum:
                         else:
                             joint_curve = joint_survival_curve(qx_map["male"], qx_map["female"], partner_age, age, horizon)
                         fig_surv.add_trace(go.Scatter(x=years_axis, y=joint_curve, name="Joint (at least one alive)",
-                                                       line=dict(width=3, color="#1f77b4")))
+                                                       line=dict(width=3, color="#6B6FC9")))  # deepened brand Cloud Blue
                     fig_surv.update_layout(xaxis_title="Year", yaxis_title="Probability alive", yaxis_range=[0, 1],
                                             height=380, margin=dict(l=10, r=10, t=20, b=10),
                                             legend=dict(orientation="h", y=-0.2))
