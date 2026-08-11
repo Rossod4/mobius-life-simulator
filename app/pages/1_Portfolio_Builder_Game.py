@@ -502,10 +502,6 @@ LEADERBOARD_CSV = GAME_STATE_DIR / "leaderboard.csv"
 LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin",
                         "Median annual return %", "Asset classes used", "Allocation"]
 
-# Purely cosmetic team mascot picker - prepended to the team name string (see team_display)
-# rather than stored as its own column, so it needs no leaderboard schema change.
-TEAM_EMOJIS = ["🦄", "🐉", "🦁", "🐙", "🚀", "🔥", "🎯", "🍀", "🌟", "🦊", "🐝", "🐺"]
-
 SUSPENSE_MESSAGES = [
     "🎲 Testing your portfolio against 2,000 possible futures...",
     "📉 Simulating market crashes...",
@@ -1169,16 +1165,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-_name_col, _emoji_col = st.columns([4, 1])
-with _name_col:
-    team_name = st.text_input("🏷️ Team / player name", key="team_name",
-                               help="Shown on the leaderboard - pick something your team will recognise.")
-with _emoji_col:
-    team_emoji = st.selectbox("Mascot", TEAM_EMOJIS, key="team_emoji", label_visibility="collapsed")
-# The emoji is purely cosmetic flair prepended to the display name - stored as part of the same
-# "Team" string everywhere (leaderboard, champion card) rather than a new column, so it works
-# with the existing Google Sheets/CSV schema with no migration needed.
-team_display = f"{team_emoji} {team_name.strip()}" if team_name.strip() else ""
+team_name = st.text_input("🏷️ Team / player name", key="team_name",
+                           help="Shown on the leaderboard - pick something your team will recognise.")
+team_display = team_name.strip()
 
 st.markdown("#### 🏗️ Your allocation")
 st.caption("Drag a slider for each asset class you want to hold (they must add up to 100%), and set "
