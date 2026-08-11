@@ -48,6 +48,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+import tax
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
 from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES, asset_class_weights, COMPARISON_GROUPS
 
@@ -413,6 +414,7 @@ st.markdown(
         background: {CARBON_BLACK};
         color: white;
         display: inline-block;
+        cursor: help;
         transition: transform 0.15s cubic-bezier(.34,1.56,.64,1), box-shadow 0.15s ease,
             background 0.15s ease;
     }}
@@ -650,6 +652,12 @@ def _host_state() -> dict:
     return {
         "age": 65, "horizon": 30, "pot": 500_000, "spend": 20_000,
         "max_classes": 6, "max_fee_pct": 0.20,
+        # Tax & State Pension - off by default (matches the main app's own default), a purely
+        # optional "fun side thing" the host can switch on for a group that wants the extra
+        # realism. When on, "Desired annual spend" is treated as NET (take-home), same convention
+        # the main app uses - see its own "Tax & State Pension" sidebar section for the full model.
+        "apply_tax": False, "sp_amount": tax.FULL_NEW_STATE_PENSION_ANNUAL,
+        "sp_age": tax.DEFAULT_STATE_PENSION_AGE,
         "updated_at": None, "updated_by": None,
         "revealed": False, "revealed_at": None,
     }
@@ -759,6 +767,22 @@ def _badges(weights, custom_fee, selected_count, max_classes):
     if alt_weight >= 0.15:
         tags.append("💎 Alternative Investor")
     return tags
+
+
+# Hover text for each badge - shown via a native tooltip on the badge pill itself, since these
+# earn their keep by being read, not just collected. Keys must match _badges()'s tag strings
+# exactly (emoji + label).
+BADGE_MEANINGS = {
+    "🎲 Risk Taker": "80%+ in equities. Bold. Reckless. Possibly both.",
+    "🛡️ Ultra Safe": "20% or less in equities. Sleeps very soundly at night.",
+    "⚖️ Balanced": "35-65% in equities. The have-your-cake-and-eat-it portfolio.",
+    "💰 Fee Hawk": "Weighted fee under 0.15% pa. Squeezed every last basis point out of this.",
+    "🌐 Diversifier": "Used every asset class the cap allowed. Didn't leave a single one on the table.",
+    "🎰 All In": "95%+ in a single asset class. Full send, no plan B.",
+    "🌍 Globe Trotter": "30%+ overseas exposure. Passport fully stamped.",
+    "💎 Alternative Investor": "15%+ in commodities/infrastructure/property/credit alternatives. "
+                                "Too cool for plain stocks and bonds.",
+}
 
 
 # The Mobius fund store's own "Asset Class Sub-category" list (per the platform's filter panel),
@@ -978,7 +1002,7 @@ elif not revealed:
     st.markdown(
         "<div class='stats-banner'>"
         f"<span>🎲 {_n_plays} portfolio{'s' if _n_plays != 1 else ''} submitted</span>"
-        f"<span>👥 {_n_teams} team{'s' if _n_teams != 1 else ''} playing</span>"
+        f"<span>{_n_teams} team{'s' if _n_teams != 1 else ''} playing</span>"
         "<span>🤫 Scores are hidden until the host reveals the winner</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -991,7 +1015,7 @@ else:
     st.markdown(
         "<div class='stats-banner'>"
         f"<span>🎲 {_n_plays} portfolio{'s' if _n_plays != 1 else ''} built</span>"
-        f"<span>👥 {_n_teams} team{'s' if _n_teams != 1 else ''} playing</span>"
+        f"<span>{_n_teams} team{'s' if _n_teams != 1 else ''} playing</span>"
         f"<span>📊 avg probability of ruin: {_avg_ruin:.1f}%</span>"
         f"<span>🏆 best so far: {_best_row['Team']} ({_best_row['Probability of ruin']:.1f}%)</span>"
         "</div>",
@@ -1037,10 +1061,36 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
                 help="A second constraint alongside the asset-class cap - forces a genuine cost-vs-"
                      "diversification trade-off instead of just picking the priciest option everywhere.",
             )
+        st.divider()
+        st.markdown("**🧾 Tax & State Pension** *(optional fun side thing)*")
+        _h_apply_tax = st.checkbox(
+            "Include income tax + State Pension", value=host_state["apply_tax"], key="host_tax_in",
+            help="When on, 'Desired annual spend' is treated as the NET (take-home) amount a "
+                 "player wants - the model works out what actually has to come out of the pot "
+                 "(gross, taxable) to deliver that, and adds the State Pension as a second income "
+                 "stream once it starts. Same convention as the main comparison tool's own Tax & "
+                 "State Pension setting. Off by default, since it adds a layer most groups won't "
+                 "need for a quick game - switch it on for a group that wants the extra realism.",
+        )
+        if _h_apply_tax:
+            _tc1, _tc2 = st.columns(2)
+            with _tc1:
+                _h_sp_amount = st.number_input(
+                    "Full State Pension, today's £ per year", 0, 50_000,
+                    int(round(host_state["sp_amount"])), step=100, key="host_sp_amount_in",
+                )
+            with _tc2:
+                _h_sp_age = st.number_input(
+                    "State Pension age", 55, 75, host_state["sp_age"], key="host_sp_age_in",
+                )
+        else:
+            _h_sp_amount, _h_sp_age = host_state["sp_amount"], host_state["sp_age"]
+
         if st.button("📡 Publish to all groups", type="primary", use_container_width=True):
             host_state.update(
                 age=_h_age, horizon=_h_horizon, pot=_h_pot, spend=_h_spend,
                 max_classes=_h_max_classes, max_fee_pct=_h_max_fee,
+                apply_tax=_h_apply_tax, sp_amount=_h_sp_amount, sp_age=_h_sp_age,
                 updated_at=datetime.now().strftime("%H:%M:%S"),
                 updated_by=host_name.strip() or "Host",
             )
@@ -1072,6 +1122,11 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
     _s4.metric("Spend", f"£{host_state['spend']:,.0f}")
     _s5.metric("Max classes", host_state["max_classes"])
     _s6.metric("Max fee", f"{host_state['max_fee_pct']:.2f}%")
+    if host_state["apply_tax"]:
+        st.caption(f"🧾 Tax & State Pension: **on** (£{host_state['sp_amount']:,.0f}/yr from age "
+                   f"{host_state['sp_age']}) - spend above is treated as NET/take-home.")
+    else:
+        st.caption("🧾 Tax & State Pension: off - spend above is a single pre-tax number.")
 
     age = host_state["age"]
     horizon = host_state["horizon"]
@@ -1079,6 +1134,9 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
     spend = host_state["spend"]
     max_classes = host_state["max_classes"]
     max_fee_pct = host_state["max_fee_pct"]
+    apply_tax = host_state["apply_tax"]
+    sp_amount = host_state["sp_amount"]
+    sp_age = host_state["sp_age"]
 
 granularity = st.radio(
     "🧩 Asset classes",
@@ -1273,7 +1331,8 @@ if reveal:
         time.sleep(0.45)
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                             initial_annual_spend=float(spend))
+                             initial_annual_spend=float(spend), apply_tax=apply_tax,
+                             state_pension_annual=float(sp_amount), state_pension_age=int(sp_age))
     result = run_simulation("Your portfolio", asset_df, cpi, profile, method="stationary_block",
                              n_sims=2000, seed=42, custom_weights=weights, custom_fee=custom_fee)
     suspense_slot.empty()
@@ -1476,7 +1535,8 @@ if has_result and revealed:
                "starting right as it happened - the real sequence of what actually came next, "
                "not a random resample of history.")
     _crash_profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                                    initial_annual_spend=float(spend))
+                                    initial_annual_spend=float(spend), apply_tax=apply_tax,
+                                    state_pension_annual=float(sp_amount), state_pension_age=int(sp_age))
     _you_weights = st.session_state[f"game_weights_{granularity}"]
     _you_fee = st.session_state.get(f"game_fee_{granularity}", 0.001)
     _crash_only = {k: v for k, v in CRASH_SCENARIOS.items() if v is not None}
@@ -1553,19 +1613,22 @@ if has_result and revealed:
                    COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈",
                    comment=_return_comment(median_return))
     with return_col2:
-        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰",
+        _stat_card("Legacy left behind", f"£{median_outcome:,.0f}", icon="🏺",
                    comment=_outcome_comment(median_outcome, float(pot)))
 
     badges = st.session_state.get(f"game_badges_{granularity}", [])
     if badges:
         st.markdown(
-            "<div class='badge-row'>" + "".join(f"<span class='badge-pill'>{b}</span>" for b in badges)
-            + "</div>",
+            "<div class='badge-row'>" + "".join(
+                f"<span class='badge-pill' title='{html.escape(BADGE_MEANINGS.get(b, ''))}'>{b}</span>"
+                for b in badges
+            ) + "</div>",
             unsafe_allow_html=True,
         )
 
     profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                             initial_annual_spend=float(spend))
+                             initial_annual_spend=float(spend), apply_tax=apply_tax,
+                             state_pension_annual=float(sp_amount), state_pension_age=int(sp_age))
     better_result = _benchmark_result("Better", asset_df, cpi, profile)
     better_ruin = better_result.prob_ruin
 
