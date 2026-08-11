@@ -943,9 +943,8 @@ st.markdown(
 st.caption(
     "Compare any registered portfolio - a competitor's fund, or another Mobius construction - "
     "against Mobius's own: Accumulation tests growing the pot with no withdrawals, Decumulation "
-    "tests drawing an income from it. Pick which portfolios to compare in the sidebar. Defaults to "
-    "Aspen Advisers UK's own 'Growth Passive Plus' and 'Four Seasons Fund' lineups vs Mobius's "
-    "Alternative and Better. Uses Bloomberg data to 14 July 2026."
+    "tests drawing an income from it. Pick which portfolios to compare in the sidebar. Uses "
+    "Bloomberg data."
 )
 # Reserved here (right under the title) so the nav bar renders at the TOP of the page, matching
 # hero_container's own pattern below - actual content is filled in once show_accum/show_decum and
