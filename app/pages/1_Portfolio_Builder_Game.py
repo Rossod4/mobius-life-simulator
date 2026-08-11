@@ -269,6 +269,20 @@ st.markdown(
     .cheat-sheet-row .cs-risk {{ white-space: nowrap; font-size: 0.8rem; }}
     .cheat-sheet-row .cs-blurb {{ color: {GREY_700}; }}
 
+    .risk-dial-label {{
+        display: flex; justify-content: space-between; font-size: 0.8rem;
+        font-weight: 600; color: {GREY_700}; margin-bottom: 0.25rem;
+    }}
+    .risk-dial-track {{
+        position: relative; height: 10px; border-radius: 6px; margin-bottom: 1rem;
+        background: linear-gradient(90deg, {COLOR_GOOD}, {COLOR_WARN}, {COLOR_BAD});
+    }}
+    .risk-dial-marker {{
+        position: absolute; top: -4px; width: 4px; height: 18px; border-radius: 2px;
+        background: {CARBON_BLACK}; box-shadow: 0 0 0 2px white;
+        transition: left 0.25s ease;
+    }}
+
     .stat-card {{
         border: 1px solid {STEEL_GREY};
         border-radius: 14px;
@@ -397,6 +411,10 @@ GAME_STATE_DIR.mkdir(exist_ok=True)
 LEADERBOARD_CSV = GAME_STATE_DIR / "leaderboard.csv"
 LEADERBOARD_COLUMNS = ["Time", "Team", "Mode", "Probability of ruin",
                         "Median annual return %", "Asset classes used", "Allocation"]
+
+# Purely cosmetic team mascot picker - prepended to the team name string (see team_display)
+# rather than stored as its own column, so it needs no leaderboard schema change.
+TEAM_EMOJIS = ["🦄", "🐉", "🦁", "🐙", "🚀", "🔥", "🎯", "🍀", "🌟", "🦊", "🐝", "🐺"]
 
 SUSPENSE_MESSAGES = [
     "🎲 Testing your portfolio against 2,000 possible futures...",
@@ -614,10 +632,27 @@ def _tier(prob_ruin):
         return "High risk", "💀", COLOR_BAD, "Back to the drawing board - this pot runs out a lot."
 
 
+# Extra construction-style groupings for badges, at the same individual-building-block label
+# level _badges() receives its `weights` in (post FUND_STORE_MAP expansion) - separate from
+# EQUITY_CLASSES (imported from portfolios.py, used across the main app too) since these two
+# groupings are specific to this game's flair tags, not shared model logic.
+OVERSEAS_CLASSES = {
+    "EM Equities", "Eq EM Net", "EM Corp Bond", "Global Bonds", "Global Agg Bonds",
+    "US Treasuries 20yr+", "US HY Corp Bond", "US ABS", "US Prop REITS",
+}
+ALTERNATIVE_CLASSES = {
+    "Commodities", "Infrastructure", "REITs", "US Prop REITS", "Securitised Credit",
+    "US ABS", "Hedge Fund Credit Suisse", "HF Trend",
+}
+
+
 def _badges(weights, custom_fee, selected_count, max_classes):
     """Flair tags based on HOW a portfolio was built, not the score - separate from the tier
     verdict (which is purely about the outcome), these reward specific construction choices."""
     equity_weight = float(weights[weights.index.isin(EQUITY_CLASSES)].sum())
+    overseas_weight = float(weights[weights.index.isin(OVERSEAS_CLASSES)].sum())
+    alt_weight = float(weights[weights.index.isin(ALTERNATIVE_CLASSES)].sum())
+    max_single = float(weights.max()) if len(weights) else 0.0
     tags = []
     if equity_weight >= 0.8:
         tags.append("🎲 Risk Taker")
@@ -629,6 +664,12 @@ def _badges(weights, custom_fee, selected_count, max_classes):
         tags.append("💰 Fee Hawk")
     if selected_count == max_classes:
         tags.append("🌐 Diversifier")
+    if max_single >= 0.95:
+        tags.append("🎰 All In")
+    if overseas_weight >= 0.3:
+        tags.append("🌍 Globe Trotter")
+    if alt_weight >= 0.15:
+        tags.append("💎 Alternative Investor")
     return tags
 
 
@@ -749,6 +790,34 @@ ASSET_CLASS_INFO: dict[str, tuple[str, str]] = {
 def _asset_help(label: str) -> str | None:
     info = ASSET_CLASS_INFO.get(label)
     return f"{info[1]} — {info[0]}" if info else None
+
+
+_RISK_TIER_SCORE = {"🟢": 1.0, "🟡": 2.0, "🔴": 3.0}
+
+
+def _live_risk_read(edited_df) -> tuple[float, str, str] | None:
+    """A cheap, instant proxy for how risky the CURRENT slider allocation looks, built from each
+    label's ASSET_CLASS_INFO risk tier weighted by its allocation - not the real simulation (that
+    only runs on submit), just live feedback while building so the sliders feel like they matter
+    immediately. Returns (0-1 dial position, tier label, tier color) or None if nothing's allocated."""
+    total = float(edited_df["Weight %"].sum())
+    if total <= 0:
+        return None
+    weighted = 0.0
+    for _, r in edited_df.iterrows():
+        if r["Weight %"] <= 0:
+            continue
+        info = ASSET_CLASS_INFO.get(r["Asset class"])
+        tier_score = _RISK_TIER_SCORE.get(info[1][0], 2.0) if info else 2.0
+        weighted += r["Weight %"] * tier_score
+    score = weighted / total  # 1.0 (all lower-risk) .. 3.0 (all higher-risk)
+    position = (score - 1.0) / 2.0  # 0.0 .. 1.0 for the dial marker
+    if score < 1.6:
+        return position, "🟢 Lower-risk mix", COLOR_GOOD
+    elif score < 2.4:
+        return position, "🟡 Balanced mix", COLOR_WARN
+    else:
+        return position, "🔴 Higher-risk mix", COLOR_BAD
 
 
 # General, well-established investing/market-history facts - deliberately kept to safe,
@@ -951,8 +1020,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-team_name = st.text_input("🏷️ Team / player name", key="team_name",
-                           help="Shown on the leaderboard - pick something your team will recognise.")
+_name_col, _emoji_col = st.columns([4, 1])
+with _name_col:
+    team_name = st.text_input("🏷️ Team / player name", key="team_name",
+                               help="Shown on the leaderboard - pick something your team will recognise.")
+with _emoji_col:
+    team_emoji = st.selectbox("Mascot", TEAM_EMOJIS, key="team_emoji", label_visibility="collapsed")
+# The emoji is purely cosmetic flair prepended to the display name - stored as part of the same
+# "Team" string everywhere (leaderboard, champion card) rather than a new column, so it works
+# with the existing Google Sheets/CSV schema with no migration needed.
+team_display = f"{team_emoji} {team_name.strip()}" if team_name.strip() else ""
 
 st.markdown("#### 🏗️ Your allocation")
 st.caption("Drag a slider for each asset class you want to hold (they must add up to 100%), and set "
@@ -1040,6 +1117,21 @@ else:
 
 st.progress(min(total_weight / 100.0, 1.0))
 st.caption(build_stage)
+
+_risk_read = _live_risk_read(edited)
+if _risk_read is not None:
+    _risk_pos, _risk_label, _risk_color = _risk_read
+    st.markdown(
+        f"<div class='risk-dial-label'><span>🎯 Live risk read</span>"
+        f"<span style='color:{_risk_color};'>{_risk_label}</span></div>"
+        f"<div class='risk-dial-track'>"
+        f"<div class='risk-dial-marker' style='left:calc({_risk_pos * 100:.1f}% - 2px);'></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption("A quick read on your mix as you build - not the real simulation, which only runs "
+               "once you lock in your portfolio.")
+
 progress_col, count_col, fee_col, name_col = st.columns(4)
 with progress_col:
     _stat_card("Total allocated", f"{total_weight:.1f}% / 100%",
@@ -1051,7 +1143,7 @@ with fee_col:
     _stat_card("Weighted fee", f"{live_fee_pct:.2f}% / {max_fee_pct:.2f}%",
                COLOR_GOOD if fee_ok else COLOR_BAD if total_weight > 0 else None, icon="💷")
 with name_col:
-    _stat_card("Team name", html.escape(team_name.strip()) if name_ok else "Not set yet",
+    _stat_card("Team name", html.escape(team_display) if name_ok else "Not set yet",
                COLOR_GOOD if name_ok else COLOR_BAD, icon="🏷️")
 
 if not weights_ok:
@@ -1107,7 +1199,7 @@ if reveal:
     st.session_state[f"game_badges_{granularity}"] = _badges(weights, custom_fee, selected_count, max_classes)
     _append_leaderboard({
         "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Team": team_name.strip(),
+        "Team": team_display,
         "Mode": granularity,
         "Probability of ruin": round(result.prob_ruin * 100, 2),
         "Median annual return %": round(median_return * 100, 2),
@@ -1366,7 +1458,7 @@ else:
     ranked = leaderboard.sort_values("Probability of ruin").reset_index(drop=True)
     medals = ["🥇", "🥈", "🥉"]
     ranked.insert(0, "Rank", [medals[i] if i < 3 else str(i + 1) for i in range(len(ranked))])
-    current = team_name.strip().lower()
+    current = team_display.strip().lower()
     if current:
         ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
 
@@ -1383,6 +1475,23 @@ else:
     st.dataframe(display_df.style.apply(_highlight_podium, axis=1), hide_index=True, use_container_width=True)
 
     winner = ranked.iloc[0]
+
+    # "How close was it?" - compares the winner against the nearest DIFFERENT team, not just the
+    # next row (which could be the same team's own second attempt if they played twice), so the
+    # callout is always a genuine rivalry rather than someone racing themselves.
+    _rival_rows = ranked[ranked["Team"] != winner["Team"]]
+    if not _rival_rows.empty:
+        _rival = _rival_rows.iloc[0]
+        _gap = float(_rival["Probability of ruin"]) - float(winner["Probability of ruin"])
+        if 0 <= _gap < 2.0:
+            st.markdown(
+                f"<div class='fun-fact-banner' style='background:{PALE_PINK}; text-align:center; "
+                f"font-weight:600;'>🔥 Nail-biter! {html.escape(str(winner['Team']))} edged out "
+                f"{html.escape(str(_rival['Team']))} by just {_gap:.1f} percentage points of "
+                "probability of ruin.</div>",
+                unsafe_allow_html=True,
+            )
+
     alloc = winner.get("Allocation")
     # Allocation strings are built at reveal time as "Label NN%, Label NN%, ..." (see
     # allocation_str above) - parse them back into (label, weight) pairs for the champion
