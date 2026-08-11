@@ -1295,251 +1295,31 @@ if reveal:
         "Allocation": allocation_str,
     })
 
-if st.session_state.get(result_key) is not None:
-    if not revealed:
-        st.divider()
-        st.markdown(
-            "<div class='result-card' style='background:linear-gradient(135deg, "
-            f"{GREY_900}, {CARBON_BLACK});'>"
-            "<div style='font-size:1.3rem; font-weight:700;'>🤐 Portfolio locked in!</div>"
-            "<div class='tagline'>Your probability of ruin is hidden until the host reveals the "
-            "winner for everyone - sit tight...</div></div>",
-            unsafe_allow_html=True,
-        )
-        _wcol1, _wcol2 = st.columns(2)
-        with _wcol1:
-            if st.button("🔁 Change my portfolio before reveal", use_container_width=True):
-                del st.session_state[result_key]
-                st.rerun()
-        with _wcol2:
-            if st.button("🔄 Check if it's been revealed", use_container_width=True):
-                st.rerun()
-    else:
-        if just_revealed:
-            _reveal_slot = st.empty()
-            for _msg in ["🥁 The host has revealed the winner...", "🔓 Unlocking your result...",
-                         "✨ Here it comes..."]:
-                _reveal_slot.markdown(f"<div class='suspense-text'>{_msg}</div>", unsafe_allow_html=True)
-                time.sleep(0.4)
-            _reveal_slot.empty()
+# Reveal order, per explicit feedback: the shared moment (who won, how everyone stacks up) comes
+# FIRST for everyone the instant it's revealed, and each player's own deep-dive stats/charts come
+# LAST, as optional extras to explore once the headline result has landed - not interleaved with
+# it. Previously each player's own result card appeared before they'd even seen who won, which
+# read as confusing (a personal number with no context for whether it was good or bad relative to
+# the room).
+has_result = st.session_state.get(result_key) is not None
 
-        prob_ruin = st.session_state[result_key]
-        st.divider()
-        tier, emoji, color, tagline = _tier(prob_ruin)
-        st.markdown(
-            f"<div class='result-card' style='background:linear-gradient(135deg, {color}, {color}cc);'>"
-            f"<div style='font-size:0.9rem; font-weight:700; text-transform:uppercase; "
-            f"letter-spacing:0.06em; opacity:0.9;'>{emoji} {tier}</div>"
-            f"<div class='big-number'>{prob_ruin * 100:.1f}%</div>"
-            f"<div style='font-size:0.85rem; opacity:0.85;'>probability of ruin</div>"
-            f"<div class='tagline'>{tagline}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if prob_ruin < 0.15:
-            st.balloons()
-
-        st.markdown("#### 💥 Would your portfolio have survived...?")
-        st.caption("Click a real historical crisis to re-test the SAME portfolio you just built, "
-                   "starting right as it happened - the real sequence of what actually came next, "
-                   "not a random resample of history.")
-        _crash_profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                                        initial_annual_spend=float(spend))
-        _you_weights = st.session_state[f"game_weights_{granularity}"]
-        _you_fee = st.session_state.get(f"game_fee_{granularity}", 0.001)
-        _crash_only = {k: v for k, v in CRASH_SCENARIOS.items() if v is not None}
-        _crash_cols = st.columns(len(_crash_only))
-        for _col, (_label, _start_date) in zip(_crash_cols, _crash_only.items()):
-            with _col:
-                if st.button(_label, key=f"crash_btn_{granularity}_{_label}", use_container_width=True):
-                    _crash_asset_df = asset_df[asset_df.index.date >= _start_date]
-                    _crash_result = run_simulation(
-                        "Your portfolio", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
-                        n_sims=2000, seed=42, custom_weights=_you_weights, custom_fee=_you_fee,
-                    )
-                    st.session_state[f"crash_result_{granularity}_{_label}"] = _crash_result.prob_ruin
-                    st.session_state[f"crash_paths_{granularity}_{_label}"] = _crash_result.paths
-                    # Better's own crash-filtered run for the same growth chart - deliberately NOT
-                    # going through the cached _benchmark_result() here, since its cache key
-                    # excludes asset_df (see its docstring) and would silently keep returning the
-                    # full-history result for every crash scenario if reused here - a bug already
-                    # hit and fixed once before for this exact function. A plain uncached call,
-                    # stashed in session_state per (mode, crash label), sidesteps that entirely.
-                    _crash_better_result = run_simulation(
-                        "Better", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
-                        n_sims=2000, seed=42,
-                    )
-                    st.session_state[f"crash_better_paths_{granularity}_{_label}"] = _crash_better_result.paths
-
-        for _label in _crash_only:
-            _crash_key = f"crash_result_{granularity}_{_label}"
-            if st.session_state.get(_crash_key) is not None:
-                _crash_ruin = st.session_state[_crash_key]
-                _survived = _crash_ruin < 0.5
-                _verdict = "✅ SURVIVED" if _survived else "💀 WIPED OUT"
-                _verdict_color = COLOR_GOOD if _survived else COLOR_BAD
-                st.markdown(
-                    f"<div class='crash-banner' style='background:{_verdict_color};'>"
-                    f"{_label}: <b>{_verdict}</b> — {_crash_ruin * 100:.1f}% probability of ruin"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-                _crash_paths = st.session_state.get(f"crash_paths_{granularity}_{_label}")
-                _crash_better_paths = st.session_state.get(f"crash_better_paths_{granularity}_{_label}")
-                if _crash_paths is not None:
-                    _crash_years_axis = np.arange(horizon + 1)
-                    _crash_series = [("You", _verdict_color, _crash_paths)]
-                    if _crash_better_paths is not None:
-                        _crash_series.append((
-                            PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"),
-                            "#5B8FA8", _crash_better_paths,
-                        ))
-                    _crash_fig = go.Figure()
-                    for _cs_label, _cs_color, _cs_paths in _crash_series:
-                        _cq25, _cq50, _cq75 = (np.percentile(_cs_paths, q, axis=0) for q in (25, 50, 75))
-                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq75, line=dict(width=0),
-                                                         showlegend=False, hoverinfo="skip"))
-                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq25, fill="tonexty",
-                                                         line=dict(width=0), showlegend=False, hoverinfo="skip",
-                                                         fillcolor=_hex_to_rgba(_cs_color, 0.18)))
-                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq50, mode="lines",
-                                                         name=_cs_label, line=dict(width=3, color=_cs_color)))
-                    _crash_fig.update_layout(
-                        height=280, margin=dict(l=10, r=10, t=25, b=10), hovermode="x unified",
-                        xaxis_title="Year", yaxis_title="Portfolio value (£)",
-                        legend=dict(orientation="h", y=-0.25),
-                    )
-                    st.caption(f"How your pot could have evolved starting right as {_label} happened.")
-                    st.plotly_chart(_crash_fig, use_container_width=True,
-                                     key=f"crash_chart_{granularity}_{_label}")
-
-        median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
-        median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
-        return_col1, return_col2 = st.columns(2)
-        with return_col1:
-            _stat_card("Median annual return", f"{median_return * 100:+.1f}%",
-                       COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈",
-                       comment=_return_comment(median_return))
-        with return_col2:
-            _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰",
-                       comment=_outcome_comment(median_outcome, float(pot)))
-
-        badges = st.session_state.get(f"game_badges_{granularity}", [])
-        if badges:
-            st.markdown(
-                "<div class='badge-row'>" + "".join(f"<span class='badge-pill'>{b}</span>" for b in badges)
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-
-        profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                                 initial_annual_spend=float(spend))
-        better_result = _benchmark_result("Better", asset_df, cpi, profile)
-        better_ruin = better_result.prob_ruin
-
-        st.markdown("#### ⚔️ How you compare")
-        st.caption("Benchmarked against Mobius Better - the tool's own most diversified construction, "
-                   "not a competitor's fund - as a guide to how well (or badly) you did.")
-        contenders = [
-            ("You", prob_ruin),
-            (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), better_ruin),
-        ]
-        best_ruin = min(p for _, p in contenders)
-        bcols = st.columns(2)
-        for col, (label, p) in zip(bcols, contenders):
-            with col:
-                is_winner = p == best_ruin
-                crown = "👑 " if is_winner else ""
-                st.markdown(
-                    f"<div class='battle-card{' winner' if is_winner else ''}'>"
-                    f"<div class='name'>{crown}{label}</div>"
-                    f"<div class='pct'>{p * 100:.1f}%</div></div>",
-                    unsafe_allow_html=True,
-                )
-        beat_better = prob_ruin < better_ruin
-        if beat_better:
-            st.success("🎉 You beat Mobius Better - the tool's own most diversified construction. Impressive.")
-        else:
-            st.info("📉 Mobius Better currently beats you - room to improve.")
-
-        st.markdown("#### 📊 How your pot could evolve")
-        st.caption("Interactive - hover for exact values, drag to zoom. The bold line is each portfolio's "
-                   "median (typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
-        fan = go.Figure()
-        fan_series = [
-            ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
-             st.session_state[f"game_paths_{granularity}"]),
-            # A deepened Cloud Blue for Mobius's own line - the brand's raw Cloud Blue (#B6B7E0) is too
-            # pale to read clearly as a chart line at normal width, so this keeps the same hue family
-            # while giving it enough contrast to actually see.
-            (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#5B8FA8",
-             better_result.paths),
-        ]
-        years_axis = np.arange(horizon + 1)
-        for label, fan_color, paths in fan_series:
-            q25, q50, q75 = (np.percentile(paths, q, axis=0) for q in (25, 50, 75))
-            fan.add_trace(go.Scatter(x=years_axis, y=q75, line=dict(width=0), showlegend=False, hoverinfo="skip"))
-            fan.add_trace(go.Scatter(x=years_axis, y=q25, fill="tonexty", line=dict(width=0), showlegend=False,
-                                      hoverinfo="skip", fillcolor=_hex_to_rgba(fan_color, 0.18)))
-            fan.add_trace(go.Scatter(x=years_axis, y=q50, mode="lines", name=label,
-                                      line=dict(width=3, color=fan_color)))
-        fan.update_layout(
-            xaxis_title="Year", yaxis_title="Portfolio value (£)", height=420,
-            margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
-            legend=dict(orientation="h", y=-0.15),
-        )
-        st.plotly_chart(fan, use_container_width=True)
-
-        st.markdown("#### 🧩 How diversification made the difference")
-        you_weights = st.session_state[f"game_weights_{granularity}"]
-        better_weights = asset_class_weights("Better")
-
-        def _grouped_weights(w):
-            """Rolls asset-class-level weights up onto the same like-for-like comparison groups the
-            main app uses (portfolios.COMPARISON_GROUPS), so a player's fund-store category picks and
-            Better's own holding-level construction can be compared on equal terms even though they're
-            built from completely different underlying labels."""
-            groups = w.index.map(lambda c: COMPARISON_GROUPS.get(c, c))
-            return w.groupby(groups).sum()
-
-        you_grouped = _grouped_weights(you_weights)
-        better_grouped = _grouped_weights(better_weights)
-        all_groups = sorted(set(you_grouped.index) | set(better_grouped.index),
-                             key=lambda g: -better_grouped.get(g, 0))
-
-        div_fig = go.Figure()
-        div_fig.add_trace(go.Bar(x=all_groups, y=[you_grouped.get(g, 0) * 100 for g in all_groups],
-                                  name="You", marker_color=CORAL_RED))
-        div_fig.add_trace(go.Bar(
-            x=all_groups, y=[better_grouped.get(g, 0) * 100 for g in all_groups],
-            name=PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), marker_color="#5B8FA8",
-        ))
-        div_fig.update_layout(
-            barmode="group", yaxis_title="Weight (%)", height=360,
-            margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
-            legend=dict(orientation="h", y=-0.3), xaxis_tickangle=-30,
-        )
-        st.plotly_chart(div_fig, use_container_width=True)
-
-        you_class_count = int((you_grouped > 0.001).sum())
-        better_class_count = int((better_grouped > 0.001).sum())
-        if not beat_better:
-            st.info(
-                f"🧩 Mobius Better spreads its 100% across **{better_class_count} asset classes**; you used "
-                f"**{you_class_count}**. That spread is a big part of why it holds up better here - when one "
-                "asset class has a bad run, the others usually aren't all falling at the same time, so the "
-                "pot doesn't take the full hit."
-            )
-        else:
-            st.info(
-                f"🧩 You used **{you_class_count} asset class{'es' if you_class_count != 1 else ''}** against "
-                f"Mobius Better's **{better_class_count}** - and still came out ahead this time. Diversification "
-                "improves your odds across many possible futures; it doesn't guarantee the outcome of any "
-                "single one."
-            )
-
-        if st.button("🔁 Build another portfolio"):
+if has_result and not revealed:
+    st.divider()
+    st.markdown(
+        "<div class='result-card' style='background:linear-gradient(135deg, "
+        f"{GREY_900}, {CARBON_BLACK});'>"
+        "<div style='font-size:1.3rem; font-weight:700;'>🤐 Portfolio locked in!</div>"
+        "<div class='tagline'>Your probability of ruin is hidden until the host reveals the "
+        "winner for everyone - sit tight...</div></div>",
+        unsafe_allow_html=True,
+    )
+    _wcol1, _wcol2 = st.columns(2)
+    with _wcol1:
+        if st.button("🔁 Change my portfolio before reveal", use_container_width=True):
             del st.session_state[result_key]
+            st.rerun()
+    with _wcol2:
+        if st.button("🔄 Check if it's been revealed", use_container_width=True):
             st.rerun()
 
 st.divider()
@@ -1589,37 +1369,9 @@ else:
     current = team_display.strip().lower()
     if current:
         ranked["Team"] = ranked["Team"].apply(lambda t: f"👉 {t}" if t.strip().lower() == current else t)
-
-    # Podium tints derived from the brand palette rather than generic gold/silver/bronze web
-    # colours: deepened Pale Yellow for 1st, Steel Grey for 2nd (already named "Steel" - a neat
-    # fit for silver), deepened Pale Pink for 3rd.
-    _row_colors = {0: "rgba(201,162,39,0.20)", 1: "rgba(204,204,213,0.35)", 2: "rgba(217,143,163,0.20)"}
-
-    def _highlight_podium(row):
-        style = f"background-color: {_row_colors[row.name]}" if row.name in _row_colors else ""
-        return [style] * len(row)
-
-    display_df = ranked.drop(columns=["Allocation"], errors="ignore")
-    st.dataframe(display_df.style.apply(_highlight_podium, axis=1), hide_index=True, use_container_width=True)
-
     winner = ranked.iloc[0]
 
-    # "How close was it?" - compares the winner against the nearest DIFFERENT team, not just the
-    # next row (which could be the same team's own second attempt if they played twice), so the
-    # callout is always a genuine rivalry rather than someone racing themselves.
-    _rival_rows = ranked[ranked["Team"] != winner["Team"]]
-    if not _rival_rows.empty:
-        _rival = _rival_rows.iloc[0]
-        _gap = float(_rival["Probability of ruin"]) - float(winner["Probability of ruin"])
-        if 0 <= _gap < 2.0:
-            st.markdown(
-                f"<div class='fun-fact-banner' style='background:{PALE_PINK}; text-align:center; "
-                f"font-weight:600;'>🔥 Nail-biter! {html.escape(str(winner['Team']))} edged out "
-                f"{html.escape(str(_rival['Team']))} by just {_gap:.1f} percentage points of "
-                "probability of ruin.</div>",
-                unsafe_allow_html=True,
-            )
-
+    # The winner pops up FIRST - the shared "who won" moment - before the full comparison table.
     alloc = winner.get("Allocation")
     # Allocation strings are built at reveal time as "Label NN%, Label NN%, ..." (see
     # allocation_str above) - parse them back into (label, weight) pairs for the champion
@@ -1660,3 +1412,264 @@ else:
         st.plotly_chart(champ_fig, use_container_width=True)
     else:
         st.caption("No allocation recorded for the current #1 (played before this feature was added).")
+
+    # Then the comparison to everyone else: how close it was, and the full ranked table.
+    # "How close was it?" - compares the winner against the nearest DIFFERENT team, not just the
+    # next row (which could be the same team's own second attempt if they played twice), so the
+    # callout is always a genuine rivalry rather than someone racing themselves.
+    _rival_rows = ranked[ranked["Team"] != winner["Team"]]
+    if not _rival_rows.empty:
+        _rival = _rival_rows.iloc[0]
+        _gap = float(_rival["Probability of ruin"]) - float(winner["Probability of ruin"])
+        if 0 <= _gap < 2.0:
+            st.markdown(
+                f"<div class='fun-fact-banner' style='background:{PALE_PINK}; text-align:center; "
+                f"font-weight:600;'>🔥 Nail-biter! {html.escape(str(winner['Team']))} edged out "
+                f"{html.escape(str(_rival['Team']))} by just {_gap:.1f} percentage points of "
+                "probability of ruin.</div>",
+                unsafe_allow_html=True,
+            )
+
+    # Podium tints derived from the brand palette rather than generic gold/silver/bronze web
+    # colours: deepened Pale Yellow for 1st, Steel Grey for 2nd (already named "Steel" - a neat
+    # fit for silver), deepened Pale Pink for 3rd.
+    _row_colors = {0: "rgba(201,162,39,0.20)", 1: "rgba(204,204,213,0.35)", 2: "rgba(217,143,163,0.20)"}
+
+    def _highlight_podium(row):
+        style = f"background-color: {_row_colors[row.name]}" if row.name in _row_colors else ""
+        return [style] * len(row)
+
+    display_df = ranked.drop(columns=["Allocation"], errors="ignore")
+    st.dataframe(display_df.style.apply(_highlight_podium, axis=1), hide_index=True, use_container_width=True)
+
+# Everyone's shared moment (champion + leaderboard) has now landed above - each player's own
+# deep-dive stats/charts come last, as optional extras to play with once the headline result is
+# already known, rather than competing with it for attention.
+if has_result and revealed:
+    if just_revealed:
+        _reveal_slot = st.empty()
+        for _msg in ["🥁 The host has revealed the winner...", "🔓 Unlocking your result...",
+                     "✨ Here it comes..."]:
+            _reveal_slot.markdown(f"<div class='suspense-text'>{_msg}</div>", unsafe_allow_html=True)
+            time.sleep(0.4)
+        _reveal_slot.empty()
+
+    prob_ruin = st.session_state[result_key]
+    st.divider()
+    st.markdown("### 🔎 Your result, in detail")
+    tier, emoji, color, tagline = _tier(prob_ruin)
+    st.markdown(
+        f"<div class='result-card' style='background:linear-gradient(135deg, {color}, {color}cc);'>"
+        f"<div style='font-size:0.9rem; font-weight:700; text-transform:uppercase; "
+        f"letter-spacing:0.06em; opacity:0.9;'>{emoji} {tier}</div>"
+        f"<div class='big-number'>{prob_ruin * 100:.1f}%</div>"
+        f"<div style='font-size:0.85rem; opacity:0.85;'>probability of ruin</div>"
+        f"<div class='tagline'>{tagline}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    if prob_ruin < 0.15:
+        st.balloons()
+
+    st.markdown("#### 💥 Would your portfolio have survived...?")
+    st.caption("Click a real historical crisis to re-test the SAME portfolio you just built, "
+               "starting right as it happened - the real sequence of what actually came next, "
+               "not a random resample of history.")
+    _crash_profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
+                                    initial_annual_spend=float(spend))
+    _you_weights = st.session_state[f"game_weights_{granularity}"]
+    _you_fee = st.session_state.get(f"game_fee_{granularity}", 0.001)
+    _crash_only = {k: v for k, v in CRASH_SCENARIOS.items() if v is not None}
+    _crash_cols = st.columns(len(_crash_only))
+    for _col, (_label, _start_date) in zip(_crash_cols, _crash_only.items()):
+        with _col:
+            if st.button(_label, key=f"crash_btn_{granularity}_{_label}", use_container_width=True):
+                _crash_asset_df = asset_df[asset_df.index.date >= _start_date]
+                _crash_result = run_simulation(
+                    "Your portfolio", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
+                    n_sims=2000, seed=42, custom_weights=_you_weights, custom_fee=_you_fee,
+                )
+                st.session_state[f"crash_result_{granularity}_{_label}"] = _crash_result.prob_ruin
+                st.session_state[f"crash_paths_{granularity}_{_label}"] = _crash_result.paths
+                # Better's own crash-filtered run for the same growth chart - deliberately NOT
+                # going through the cached _benchmark_result() here, since its cache key
+                # excludes asset_df (see its docstring) and would silently keep returning the
+                # full-history result for every crash scenario if reused here - a bug already
+                # hit and fixed once before for this exact function. A plain uncached call,
+                # stashed in session_state per (mode, crash label), sidesteps that entirely.
+                _crash_better_result = run_simulation(
+                    "Better", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
+                    n_sims=2000, seed=42,
+                )
+                st.session_state[f"crash_better_paths_{granularity}_{_label}"] = _crash_better_result.paths
+
+    for _label in _crash_only:
+        _crash_key = f"crash_result_{granularity}_{_label}"
+        if st.session_state.get(_crash_key) is not None:
+            _crash_ruin = st.session_state[_crash_key]
+            _survived = _crash_ruin < 0.5
+            _verdict = "✅ SURVIVED" if _survived else "💀 WIPED OUT"
+            _verdict_color = COLOR_GOOD if _survived else COLOR_BAD
+            st.markdown(
+                f"<div class='crash-banner' style='background:{_verdict_color};'>"
+                f"{_label}: <b>{_verdict}</b> — {_crash_ruin * 100:.1f}% probability of ruin"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            _crash_paths = st.session_state.get(f"crash_paths_{granularity}_{_label}")
+            _crash_better_paths = st.session_state.get(f"crash_better_paths_{granularity}_{_label}")
+            if _crash_paths is not None:
+                _crash_years_axis = np.arange(horizon + 1)
+                _crash_series = [("You", _verdict_color, _crash_paths)]
+                if _crash_better_paths is not None:
+                    _crash_series.append((
+                        PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"),
+                        "#5B8FA8", _crash_better_paths,
+                    ))
+                _crash_fig = go.Figure()
+                for _cs_label, _cs_color, _cs_paths in _crash_series:
+                    _cq25, _cq50, _cq75 = (np.percentile(_cs_paths, q, axis=0) for q in (25, 50, 75))
+                    _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq75, line=dict(width=0),
+                                                     showlegend=False, hoverinfo="skip"))
+                    _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq25, fill="tonexty",
+                                                     line=dict(width=0), showlegend=False, hoverinfo="skip",
+                                                     fillcolor=_hex_to_rgba(_cs_color, 0.18)))
+                    _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq50, mode="lines",
+                                                     name=_cs_label, line=dict(width=3, color=_cs_color)))
+                _crash_fig.update_layout(
+                    height=280, margin=dict(l=10, r=10, t=25, b=10), hovermode="x unified",
+                    xaxis_title="Year", yaxis_title="Portfolio value (£)",
+                    legend=dict(orientation="h", y=-0.25),
+                )
+                st.caption(f"How your pot could have evolved starting right as {_label} happened.")
+                st.plotly_chart(_crash_fig, use_container_width=True,
+                                 key=f"crash_chart_{granularity}_{_label}")
+
+    median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
+    median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
+    return_col1, return_col2 = st.columns(2)
+    with return_col1:
+        _stat_card("Median annual return", f"{median_return * 100:+.1f}%",
+                   COLOR_GOOD if median_return >= 0 else COLOR_BAD, icon="📈",
+                   comment=_return_comment(median_return))
+    with return_col2:
+        _stat_card("Median outcome (final pot)", f"£{median_outcome:,.0f}", icon="💰",
+                   comment=_outcome_comment(median_outcome, float(pot)))
+
+    badges = st.session_state.get(f"game_badges_{granularity}", [])
+    if badges:
+        st.markdown(
+            "<div class='badge-row'>" + "".join(f"<span class='badge-pill'>{b}</span>" for b in badges)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
+                             initial_annual_spend=float(spend))
+    better_result = _benchmark_result("Better", asset_df, cpi, profile)
+    better_ruin = better_result.prob_ruin
+
+    st.markdown("#### ⚔️ How you compare")
+    st.caption("Benchmarked against Mobius Better - the tool's own most diversified construction, "
+               "not a competitor's fund - as a guide to how well (or badly) you did.")
+    contenders = [
+        ("You", prob_ruin),
+        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), better_ruin),
+    ]
+    best_ruin = min(p for _, p in contenders)
+    bcols = st.columns(2)
+    for col, (label, p) in zip(bcols, contenders):
+        with col:
+            is_winner = p == best_ruin
+            crown = "👑 " if is_winner else ""
+            st.markdown(
+                f"<div class='battle-card{' winner' if is_winner else ''}'>"
+                f"<div class='name'>{crown}{label}</div>"
+                f"<div class='pct'>{p * 100:.1f}%</div></div>",
+                unsafe_allow_html=True,
+            )
+    beat_better = prob_ruin < better_ruin
+    if beat_better:
+        st.success("🎉 You beat Mobius Better - the tool's own most diversified construction. Impressive.")
+    else:
+        st.info("📉 Mobius Better currently beats you - room to improve.")
+
+    st.markdown("#### 📊 How your pot could evolve")
+    st.caption("Interactive - hover for exact values, drag to zoom. The bold line is each portfolio's "
+               "median (typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
+    fan = go.Figure()
+    fan_series = [
+        ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
+         st.session_state[f"game_paths_{granularity}"]),
+        # A deepened Cloud Blue for Mobius's own line - the brand's raw Cloud Blue (#B6B7E0) is too
+        # pale to read clearly as a chart line at normal width, so this keeps the same hue family
+        # while giving it enough contrast to actually see.
+        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#5B8FA8",
+         better_result.paths),
+    ]
+    years_axis = np.arange(horizon + 1)
+    for label, fan_color, paths in fan_series:
+        q25, q50, q75 = (np.percentile(paths, q, axis=0) for q in (25, 50, 75))
+        fan.add_trace(go.Scatter(x=years_axis, y=q75, line=dict(width=0), showlegend=False, hoverinfo="skip"))
+        fan.add_trace(go.Scatter(x=years_axis, y=q25, fill="tonexty", line=dict(width=0), showlegend=False,
+                                  hoverinfo="skip", fillcolor=_hex_to_rgba(fan_color, 0.18)))
+        fan.add_trace(go.Scatter(x=years_axis, y=q50, mode="lines", name=label,
+                                  line=dict(width=3, color=fan_color)))
+    fan.update_layout(
+        xaxis_title="Year", yaxis_title="Portfolio value (£)", height=420,
+        margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
+        legend=dict(orientation="h", y=-0.15),
+    )
+    st.plotly_chart(fan, use_container_width=True)
+
+    st.markdown("#### 🧩 How diversification made the difference")
+    you_weights = st.session_state[f"game_weights_{granularity}"]
+    better_weights = asset_class_weights("Better")
+
+    def _grouped_weights(w):
+        """Rolls asset-class-level weights up onto the same like-for-like comparison groups the
+        main app uses (portfolios.COMPARISON_GROUPS), so a player's fund-store category picks and
+        Better's own holding-level construction can be compared on equal terms even though they're
+        built from completely different underlying labels."""
+        groups = w.index.map(lambda c: COMPARISON_GROUPS.get(c, c))
+        return w.groupby(groups).sum()
+
+    you_grouped = _grouped_weights(you_weights)
+    better_grouped = _grouped_weights(better_weights)
+    all_groups = sorted(set(you_grouped.index) | set(better_grouped.index),
+                         key=lambda g: -better_grouped.get(g, 0))
+
+    div_fig = go.Figure()
+    div_fig.add_trace(go.Bar(x=all_groups, y=[you_grouped.get(g, 0) * 100 for g in all_groups],
+                              name="You", marker_color=CORAL_RED))
+    div_fig.add_trace(go.Bar(
+        x=all_groups, y=[better_grouped.get(g, 0) * 100 for g in all_groups],
+        name=PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), marker_color="#5B8FA8",
+    ))
+    div_fig.update_layout(
+        barmode="group", yaxis_title="Weight (%)", height=360,
+        margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
+        legend=dict(orientation="h", y=-0.3), xaxis_tickangle=-30,
+    )
+    st.plotly_chart(div_fig, use_container_width=True)
+
+    you_class_count = int((you_grouped > 0.001).sum())
+    better_class_count = int((better_grouped > 0.001).sum())
+    if not beat_better:
+        st.info(
+            f"🧩 Mobius Better spreads its 100% across **{better_class_count} asset classes**; you used "
+            f"**{you_class_count}**. That spread is a big part of why it holds up better here - when one "
+            "asset class has a bad run, the others usually aren't all falling at the same time, so the "
+            "pot doesn't take the full hit."
+        )
+    else:
+        st.info(
+            f"🧩 You used **{you_class_count} asset class{'es' if you_class_count != 1 else ''}** against "
+            f"Mobius Better's **{better_class_count}** - and still came out ahead this time. Diversification "
+            "improves your odds across many possible futures; it doesn't guarantee the outcome of any "
+            "single one."
+        )
+
+    if st.button("🔁 Build another portfolio"):
+        del st.session_state[result_key]
+        st.rerun()
