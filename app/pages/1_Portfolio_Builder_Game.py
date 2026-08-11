@@ -1270,6 +1270,18 @@ if st.session_state.get(result_key) is not None:
                         n_sims=2000, seed=42, custom_weights=_you_weights, custom_fee=_you_fee,
                     )
                     st.session_state[f"crash_result_{granularity}_{_label}"] = _crash_result.prob_ruin
+                    st.session_state[f"crash_paths_{granularity}_{_label}"] = _crash_result.paths
+                    # Better's own crash-filtered run for the same growth chart - deliberately NOT
+                    # going through the cached _benchmark_result() here, since its cache key
+                    # excludes asset_df (see its docstring) and would silently keep returning the
+                    # full-history result for every crash scenario if reused here - a bug already
+                    # hit and fixed once before for this exact function. A plain uncached call,
+                    # stashed in session_state per (mode, crash label), sidesteps that entirely.
+                    _crash_better_result = run_simulation(
+                        "Better", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
+                        n_sims=2000, seed=42,
+                    )
+                    st.session_state[f"crash_better_paths_{granularity}_{_label}"] = _crash_better_result.paths
 
         for _label in _crash_only:
             _crash_key = f"crash_result_{granularity}_{_label}"
@@ -1284,6 +1296,34 @@ if st.session_state.get(result_key) is not None:
                     "</div>",
                     unsafe_allow_html=True,
                 )
+                _crash_paths = st.session_state.get(f"crash_paths_{granularity}_{_label}")
+                _crash_better_paths = st.session_state.get(f"crash_better_paths_{granularity}_{_label}")
+                if _crash_paths is not None:
+                    _crash_years_axis = np.arange(horizon + 1)
+                    _crash_series = [("You", _verdict_color, _crash_paths)]
+                    if _crash_better_paths is not None:
+                        _crash_series.append((
+                            PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"),
+                            "#5B8FA8", _crash_better_paths,
+                        ))
+                    _crash_fig = go.Figure()
+                    for _cs_label, _cs_color, _cs_paths in _crash_series:
+                        _cq25, _cq50, _cq75 = (np.percentile(_cs_paths, q, axis=0) for q in (25, 50, 75))
+                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq75, line=dict(width=0),
+                                                         showlegend=False, hoverinfo="skip"))
+                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq25, fill="tonexty",
+                                                         line=dict(width=0), showlegend=False, hoverinfo="skip",
+                                                         fillcolor=_hex_to_rgba(_cs_color, 0.18)))
+                        _crash_fig.add_trace(go.Scatter(x=_crash_years_axis, y=_cq50, mode="lines",
+                                                         name=_cs_label, line=dict(width=3, color=_cs_color)))
+                    _crash_fig.update_layout(
+                        height=280, margin=dict(l=10, r=10, t=25, b=10), hovermode="x unified",
+                        xaxis_title="Year", yaxis_title="Portfolio value (£)",
+                        legend=dict(orientation="h", y=-0.25),
+                    )
+                    st.caption(f"How your pot could have evolved starting right as {_label} happened.")
+                    st.plotly_chart(_crash_fig, use_container_width=True,
+                                     key=f"crash_chart_{granularity}_{_label}")
 
         median_return = st.session_state.get(f"game_return_{granularity}", 0.0)
         median_outcome = float(np.median(st.session_state[f"game_paths_{granularity}"][:, -1]))
