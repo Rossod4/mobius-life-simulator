@@ -965,10 +965,13 @@ st.markdown(
 )
 
 _HOWTO_STEPS = [
-    ("1️⃣", "Pick your mode", "Fund store categories (broad) or individual building blocks (finer) - your call."),
-    ("2️⃣", "Build your mix", "Assign a weight and a fee to each asset class you want to hold, until you hit 100%."),
-    ("3️⃣", "Hit reveal", "Only then do you find out your probability of ruin - no peeking beforehand."),
-    ("4️⃣", "Climb the board", "Your score lands on the shared leaderboard below - everyone playing sees it."),
+    # Plain digits, not keycap emoji (1️⃣2️⃣3️⃣...) - the emoji glyph brings its own square/rounded
+    # "keycap" chrome that clashes with (and looks dated next to) the clean circular Carbon Black
+    # badge .num already styles this with; a bare digit lets that styling actually show through.
+    ("1", "Pick your mode", "Fund store categories (broad) or individual building blocks (finer) - your call."),
+    ("2", "Build your mix", "Assign a weight and a fee to each asset class you want to hold, until you hit 100%."),
+    ("3", "Hit reveal", "Only then do you find out your probability of ruin - no peeking beforehand."),
+    ("4", "Climb the board", "Your score lands on the shared leaderboard below - everyone playing sees it."),
 ]
 st.markdown(
     "<div class='howto-row'>" + "".join(
@@ -1062,7 +1065,7 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
                      "diversification trade-off instead of just picking the priciest option everywhere.",
             )
         st.divider()
-        st.markdown("**🧾 Tax & State Pension** *(optional fun side thing)*")
+        st.markdown("**🧾 Tax & State Pension**")
         _h_apply_tax = st.checkbox(
             "Include income tax + State Pension", value=host_state["apply_tax"], key="host_tax_in",
             help="When on, 'Desired annual spend' is treated as the NET (take-home) amount a "
@@ -1615,6 +1618,23 @@ if has_result and revealed:
     with return_col2:
         _stat_card("Legacy left behind", f"£{median_outcome:,.0f}", icon="🏺",
                    comment=_outcome_comment(median_outcome, float(pot)))
+
+    # A quick, honest illustration of inflation's bite - deliberately a simple approximation
+    # (long-run average of the actual historical UK CPI series deflating the median nominal
+    # legacy over the horizon), not a per-path recomputation, since SimResult only stores nominal
+    # £ paths. Good enough to make the point that the big number isn't really worth what it looks
+    # like, without needing engine changes this close to a live event.
+    if median_outcome > 0:
+        _avg_inflation = float(cpi.mean())
+        _real_outcome = median_outcome / ((1 + _avg_inflation) ** horizon)
+        _inflation_bite = max(0.0, median_outcome - _real_outcome)
+        st.markdown(
+            f"<div class='fun-fact-banner'>💷 <b>Inflation bite:</b> that £{median_outcome:,.0f} "
+            f"legacy is only worth about £{_real_outcome:,.0f} in today's money - "
+            f"{_avg_inflation * 100:.1f}%/yr average UK inflation quietly ate roughly "
+            f"£{_inflation_bite:,.0f} of it over {horizon} years.</div>",
+            unsafe_allow_html=True,
+        )
 
     badges = st.session_state.get(f"game_badges_{granularity}", [])
     if badges:
