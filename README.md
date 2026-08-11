@@ -12,6 +12,9 @@ Streamlit Community Cloud on every push.
 
 This README is written for whoever picks this project up next — it covers what everything is,
 how to run it, and where the loose ends are, not just what's "new" in the latest delivery.
+**Running the Portfolio Builder Game live at an event? See [HOST_GUIDE.md](HOST_GUIDE.md)
+instead** — a non-technical, click-by-click guide for whoever's facilitating, separate from this
+developer-facing README.
 
 ## Contents
 
@@ -322,6 +325,9 @@ For local development, the same secrets can go in `.streamlit/secrets.toml` — 
 by this repo's `.gitignore`, since that file would contain a real private key.
 
 ## Host controls (running a live multi-group session)
+
+*For a practical, non-technical "what do I click" guide to actually running a live session, see
+[HOST_GUIDE.md](HOST_GUIDE.md) instead — this section explains how the feature works.*
 
 When 20-30 groups play at once, they should all be playing the **same scenario** (same age,
 horizon, pot, spend, and constraints) rather than each picking their own. The "⚙️ Game setup
