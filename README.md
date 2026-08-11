@@ -23,10 +23,11 @@ how to run it, and where the loose ends are, not just what's "new" in the latest
 6. [Data files](#data-files)
 7. [Adding a new portfolio](#adding-a-new-portfolio)
 8. [Persistent leaderboard setup (Google Sheets)](#persistent-leaderboard-setup-google-sheets)
-9. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
-10. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
-11. [Deployment](#deployment)
-12. [Suggested next steps](#suggested-next-steps)
+9. [Host controls (running a live multi-group session)](#host-controls-running-a-live-multi-group-session)
+10. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
+11. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
+12. [Deployment](#deployment)
+13. [Suggested next steps](#suggested-next-steps)
 
 ## Quick start
 
@@ -304,6 +305,37 @@ setup" and above the leaderboard table itself (🟢 Google Sheets / 🟡 Local f
 For local development, the same secrets can go in `.streamlit/secrets.toml` — already covered
 by this repo's `.gitignore`, since that file would contain a real private key.
 
+## Host controls (running a live multi-group session)
+
+When 20-30 groups play at once, they should all be playing the **same scenario** (same age,
+horizon, pot, spend, and constraints) rather than each picking their own. The "⚙️ Game setup
+(host controls)" expander at the top of the game page handles this:
+
+- **By default, everyone sees a read-only summary** of the current scenario (age, horizon, pot,
+  spend, max asset classes, max fee) plus a caption showing who last published it and when. They
+  cannot edit it.
+- **The session host enters a PIN** in the same expander to unlock editable controls, sets the
+  scenario, and clicks **"📡 Publish to all groups"**. Every other open tab/device picks up the
+  new values automatically on their next interaction (slider drag, button click, etc.) — no
+  refresh needed, and nothing for players to configure.
+- The PIN defaults to `mobius2026` if not overridden. **Set a real one before a live session** by
+  adding `host_pin = "your-pin-here"` to the same Streamlit Cloud secrets block described above
+  (or `.streamlit/secrets.toml` locally) — otherwise anyone could log in as host and change the
+  scenario for everyone mid-session.
+- "🗑️ Clear leaderboard" also moved inside host mode, so a random player can't wipe everyone's
+  scores.
+
+**How it works / its one real limitation**: the shared scenario is held in a single in-memory
+Python object (`st.cache_resource`, in `_host_state()`), which every session on the same server
+process reads and writes — that's what makes the "publish once, everyone sees it instantly" bit
+work with zero extra setup. This is correct for a normal Streamlit Community Cloud deployment
+(one app = one process), but it means the published scenario **resets to the defaults on every
+app restart/redeploy** (same caveat as the CSV leaderboard fallback) and **would silently stop
+broadcasting to everyone if the app were ever scaled across multiple replicas** — each replica
+would keep its own copy. Neither applies to the current single-instance Streamlit Cloud setup;
+worth knowing if that ever changes. If it does, move this to the same Google Sheets backend the
+leaderboard already uses (a small "current scenario" row instead of an append-only log).
+
 ## Key methodology notes and assumptions
 
 Please read before relying on any of this for client-facing output — several of these are
@@ -360,7 +392,27 @@ judgement calls, not settled facts.
   supports both (falls back to the CSV automatically if Sheets isn't configured or the API
   call fails for any reason), but **the actual Google Cloud setup steps still need to be done
   once** for real persistence — check whether that's been completed before relying on the
-  leaderboard surviving a redeploy.
+  leaderboard surviving a redeploy. This matters more than it sounds for a live session: the
+  CSV fallback reads the whole file, appends a row, and rewrites it (not a single atomic write),
+  so if two of 20-30 groups hit "reveal" in the same instant, one write can silently overwrite
+  the other. The Google Sheets path doesn't have this problem (`append_row` is a single atomic
+  API call) — **confirm Sheets is actually configured before any session with more than a
+  handful of simultaneous groups.**
+- **Not load-tested at 20-30 concurrent groups.** Streamlit Community Cloud runs the app as a
+  single process/single CPU core; each reveal runs a 2,000-path Monte Carlo simulation
+  (`run_simulation`, `method="stationary_block"`), which is real CPU work, not I/O-bound — if
+  many groups hit "reveal" in the same few seconds, requests queue on that one core rather than
+  running in parallel, so the last group to click could see a multi-second-plus wait rather than
+  a crash. Worth a dry run beforehand with several people hitting reveal at once to see the
+  actual delay, and warning the host it's expected rather than a bug. The Google Sheets API also
+  has its own per-minute write/read quotas (generous for occasional reveals; not something 30
+  people rapid-clicking "reveal" over and over would necessarily stay under) — the code already
+  falls back to the local CSV silently if any Sheets call fails, so a quota hit degrades rather
+  than crashes, but scores written during a fallback window won't merge back into Sheets later.
+- **Host PIN defaults to a hardcoded value (`mobius2026`) if not set.** See
+  [Host controls](#host-controls-running-a-live-multi-group-session) — set a real `host_pin` in
+  secrets before a live session, otherwise any player could log in as host and change the
+  scenario for everyone mid-game.
 - **Individual UK equities work (internship Weeks 5-8)** is a separate, less mature thread
   from the main simulator — `equity_income.py` + the AQR/RAISE swap tests are real, working
   code, but this hasn't been folded into the main app's UI at all; it's currently

@@ -512,6 +512,30 @@ def _clear_leaderboard():
     pd.DataFrame(columns=LEADERBOARD_COLUMNS).to_csv(LEADERBOARD_CSV, index=False)
 
 
+@st.cache_resource(show_spinner=False)
+def _host_state() -> dict:
+    """One dict shared by every session on this server process (st.cache_resource returns the
+    SAME object to every user, unlike st.session_state which is per-browser-tab) - lets one host
+    publish a client scenario that every group's tab picks up on their next rerun, with no polling
+    or extra storage needed. Relies on this being a normal single-process Streamlit Cloud
+    deployment; if it's ever scaled across multiple replicas this would need to move to the same
+    Google Sheets backend as the leaderboard instead."""
+    return {
+        "age": 65, "horizon": 30, "pot": 500_000, "spend": 20_000,
+        "max_classes": 6, "max_fee_pct": 0.20,
+        "updated_at": None, "updated_by": None,
+    }
+
+
+def _host_pin() -> str:
+    """Falls back to a default PIN if host_pin isn't set in st.secrets - fine for a low-stakes
+    internal game, but set one (see README) so a random player can't lock in a joke scenario."""
+    try:
+        return str(st.secrets.get("host_pin", "mobius2026"))
+    except Exception:
+        return "mobius2026"
+
+
 def _stat_card(label, value, color=None, icon=None, comment=None):
     color_style = f"color:{color};" if color else ""
     icon_html = f"{icon} " if icon else ""
@@ -664,30 +688,85 @@ else:
     )
 
 with st.expander("⚙️ Game setup (host controls)", expanded=False):
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        age = st.number_input("Starting age", 40, 90, 65)
-    with c2:
-        horizon = st.slider("Time horizon (years)", 5, 40, 30)
-    with c3:
-        pot = st.number_input("Starting pot (£)", 10_000, 10_000_000, 500_000, step=10_000)
-    with c4:
-        spend = st.number_input("Desired annual spend (£)", 1_000, 500_000, 20_000, step=1_000)
-    max_classes = st.number_input(
-        "Max number of asset classes a player can use", 1, 26, 6,
-        help="Forces harder trade-offs instead of just spreading weight across everything on offer.",
-    )
-    max_fee_pct = st.number_input(
-        "Max weighted fee allowed (% pa)", 0.0, 3.0, 0.20, step=0.01,
-        help="A second constraint alongside the asset-class cap - forces a genuine cost-vs-"
-             "diversification trade-off instead of just picking the priciest option everywhere.",
-    )
-    st.divider()
-    st.caption(f"Leaderboard storage: {_leaderboard_mode()}")
-    st.caption(f"Leaderboard has {len(_load_leaderboard())} entries.")
-    if st.button("🗑️ Clear leaderboard (start a new game)"):
-        _clear_leaderboard()
-        st.rerun()
+    host_state = _host_state()
+    is_host = st.session_state.get("is_host", False)
+
+    if not is_host:
+        pin_entry = st.text_input(
+            "Host PIN", type="password", key="host_pin_input",
+            help="Only the person running the session needs this - everyone else can skip it "
+                 "and just see the scenario below.",
+        )
+        if pin_entry:
+            if pin_entry == _host_pin():
+                st.session_state["is_host"] = True
+                st.rerun()
+            else:
+                st.error("Wrong PIN.")
+
+    if is_host:
+        st.success("✅ Host mode - Publish below applies to every group's game immediately.")
+        host_name = st.text_input("Your name (shown to groups)",
+                                   value=host_state["updated_by"] or "Host", key="host_name_input")
+        c1, c2 = st.columns(2)
+        with c1:
+            _h_age = st.number_input("Starting age", 40, 90, host_state["age"], key="host_age_in")
+            _h_horizon = st.slider("Time horizon (years)", 5, 40, host_state["horizon"], key="host_horizon_in")
+            _h_max_classes = st.number_input(
+                "Max asset classes a player can use", 1, 26, host_state["max_classes"], key="host_maxcls_in",
+                help="Forces harder trade-offs instead of just spreading weight across everything on offer.",
+            )
+        with c2:
+            _h_pot = st.number_input("Starting pot (£)", 10_000, 10_000_000, host_state["pot"],
+                                      step=10_000, key="host_pot_in")
+            _h_spend = st.number_input("Desired annual spend (£)", 1_000, 500_000, host_state["spend"],
+                                        step=1_000, key="host_spend_in")
+            _h_max_fee = st.number_input(
+                "Max weighted fee allowed (% pa)", 0.0, 3.0, host_state["max_fee_pct"],
+                step=0.01, key="host_maxfee_in",
+                help="A second constraint alongside the asset-class cap - forces a genuine cost-vs-"
+                     "diversification trade-off instead of just picking the priciest option everywhere.",
+            )
+        if st.button("📡 Publish to all groups", type="primary", use_container_width=True):
+            host_state.update(
+                age=_h_age, horizon=_h_horizon, pot=_h_pot, spend=_h_spend,
+                max_classes=_h_max_classes, max_fee_pct=_h_max_fee,
+                updated_at=datetime.now().strftime("%H:%M:%S"),
+                updated_by=host_name.strip() or "Host",
+            )
+            st.toast("Published - every group picks this up on their next click.", icon="📡")
+
+        st.divider()
+        st.caption(f"Leaderboard storage: {_leaderboard_mode()}")
+        st.caption(f"Leaderboard has {len(_load_leaderboard())} entries.")
+        if st.button("🗑️ Clear leaderboard (start a new game)"):
+            _clear_leaderboard()
+            st.rerun()
+        if st.button("Log out of host mode"):
+            st.session_state["is_host"] = False
+            st.rerun()
+        st.divider()
+
+    if host_state["updated_at"]:
+        st.caption(f"📡 Scenario published by **{host_state['updated_by']}** at "
+                   f"{host_state['updated_at']} - every group is playing this.")
+    else:
+        st.caption("📡 No host scenario published yet - everyone's using the defaults below "
+                    "until the host publishes one.")
+    _s1, _s2, _s3, _s4, _s5, _s6 = st.columns(6)
+    _s1.metric("Age", host_state["age"])
+    _s2.metric("Horizon", f"{host_state['horizon']}y")
+    _s3.metric("Pot", f"£{host_state['pot']:,.0f}")
+    _s4.metric("Spend", f"£{host_state['spend']:,.0f}")
+    _s5.metric("Max classes", host_state["max_classes"])
+    _s6.metric("Max fee", f"{host_state['max_fee_pct']:.2f}%")
+
+    age = host_state["age"]
+    horizon = host_state["horizon"]
+    pot = host_state["pot"]
+    spend = host_state["spend"]
+    max_classes = host_state["max_classes"]
+    max_fee_pct = host_state["max_fee_pct"]
 
 granularity = st.radio(
     "🧩 Asset classes",
