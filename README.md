@@ -16,18 +16,19 @@ how to run it, and where the loose ends are, not just what's "new" in the latest
 ## Contents
 
 1. [Quick start](#quick-start)
-2. [What's actually running](#whats-actually-running)
-3. [How it fits together](#how-it-fits-together)
-4. [Repository map](#repository-map)
-5. [`src/` script inventory](#src-script-inventory)
-6. [Data files](#data-files)
-7. [Adding a new portfolio](#adding-a-new-portfolio)
-8. [Persistent leaderboard setup (Google Sheets)](#persistent-leaderboard-setup-google-sheets)
-9. [Host controls (running a live multi-group session)](#host-controls-running-a-live-multi-group-session)
-10. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
-11. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
-12. [Deployment](#deployment)
-13. [Suggested next steps](#suggested-next-steps)
+2. [Running the test suite](#running-the-test-suite)
+3. [What's actually running](#whats-actually-running)
+4. [How it fits together](#how-it-fits-together)
+5. [Repository map](#repository-map)
+6. [`src/` script inventory](#src-script-inventory)
+7. [Data files](#data-files)
+8. [Adding a new portfolio](#adding-a-new-portfolio)
+9. [Persistent leaderboard setup (Google Sheets)](#persistent-leaderboard-setup-google-sheets)
+10. [Host controls (running a live multi-group session)](#host-controls-running-a-live-multi-group-session)
+11. [Key methodology notes and assumptions](#key-methodology-notes-and-assumptions)
+12. [Known gaps / where things were left off](#known-gaps--where-things-were-left-off)
+13. [Deployment](#deployment)
+14. [Suggested next steps](#suggested-next-steps)
 
 ## Quick start
 
@@ -43,6 +44,21 @@ streamlit run app/app.py
 Opens at `http://localhost:8501`. The Portfolio Builder Game is a second page,
 auto-discovered by Streamlit from `app/pages/` — it appears in the sidebar nav automatically,
 no separate command needed.
+
+## Running the test suite
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/
+```
+
+31 smoke tests, run in a couple of seconds, no data/secrets setup needed beyond what's already in
+the repo. They're scoped to catch a bad code/data edit silently producing **wrong** probability-
+of-ruin numbers (a broken portfolio weight, a missing asset-class mapping, a non-deterministic
+seed) — not a UI test suite, and not full coverage. Run this after touching anything in `src/`,
+`data/portfolio_holdings.csv`, `data/asset_class_map.csv`, or the game's `FUND_STORE_MAP`/
+`ASSET_CLASS_INFO` dicts, before pushing — a red test here means a real number is now wrong
+somewhere in the app, not a style nitpick.
 
 Requires Python 3.10+ (developed/tested on 3.14; the deployed Cloud runtime's exact version is
 unconfirmed — see the **portability gotcha** in [Known gaps](#known-gaps--where-things-were-left-off)
@@ -437,10 +453,15 @@ judgement calls, not settled facts.
   bleeding-edge type-hint syntax** — Streamlit appears to touch every page file when building
   the sidebar nav, so a syntax/import error in ANY page can crash the whole app, not just that
   page.
-- **No automated test suite.** Every module is independently runnable for a manual self-test
-  (`python src/tax.py` etc.), and there's a handful of verification scripts
-  (`verify_cma_annuity.py`), but there's no `pytest` suite — worth adding if this becomes a
-  longer-term maintained product rather than an internship deliverable.
+- **`tests/` covers the core math as a smoke suite, not full coverage.** 31 tests across
+  `test_engine.py` (simulation shapes/determinism/directional sanity), `test_portfolios.py`
+  (every portfolio's weights sum to 1, fees are plausible, every holding maps to real data), and
+  `test_game_config.py` (the game's `FUND_STORE_MAP`/`ASSET_CLASS_INFO` dicts, checked via
+  `ast.literal_eval` rather than importing the Streamlit page directly). Deliberately scoped to
+  catch a bad data/code edit silently producing wrong probability-of-ruin numbers — not UI
+  testing, not full coverage. See [Running the test suite](#running-the-test-suite) below. Every
+  module is also independently runnable for a manual self-test (`python src/tax.py` etc.), and
+  there's a handful of verification scripts (`verify_cma_annuity.py`).
 
 ## Deployment
 
