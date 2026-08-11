@@ -46,6 +46,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
 from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES, asset_class_weights, COMPARISON_GROUPS
@@ -223,6 +224,12 @@ st.markdown(
         padding: 0.9rem 1rem;
         background: white;
         border: 1px solid {STEEL_GREY};
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }}
+    .howto-card:hover {{
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(14, 15, 20, 0.1);
+        border-color: {CARBON_BLACK};
     }}
     .howto-card .num {{
         display: inline-flex; align-items: center; justify-content: center;
@@ -257,9 +264,11 @@ st.markdown(
     .fun-fact-banner b {{ font-weight: 700; }}
 
     .cheat-sheet-row {{
-        padding: 0.5rem 0; border-bottom: 1px solid {STEEL_GREY};
-        font-size: 0.85rem;
+        padding: 0.5rem 0.6rem; border-bottom: 1px solid {STEEL_GREY};
+        font-size: 0.85rem; border-radius: 8px; margin: 0 -0.6rem;
+        transition: background 0.15s ease;
     }}
+    .cheat-sheet-row:hover {{ background: {GREY_100}; }}
     .cheat-sheet-row:last-child {{ border-bottom: none; }}
     .cheat-sheet-row .cs-head {{
         display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
@@ -289,9 +298,13 @@ st.markdown(
         padding: 0.85rem 1rem;
         text-align: center;
         background: white;
-        transition: transform 0.15s ease;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
     }}
-    .stat-card:hover {{ transform: translateY(-2px); }}
+    .stat-card:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px rgba(14, 15, 20, 0.1);
+        border-color: {CARBON_BLACK};
+    }}
     .stat-card .label {{
         font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
         letter-spacing: 0.05em; color: {GREY_600};
@@ -347,6 +360,11 @@ st.markdown(
         animation: popIn 0.55s cubic-bezier(.34,1.56,.64,1);
         box-shadow: 0 14px 34px rgba(201,162,39,0.35);
         margin: 0.75rem 0 1.1rem;
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }}
+    .champion-card:hover {{
+        box-shadow: 0 18px 40px rgba(201,162,39,0.5);
+        transform: translateY(-2px);
     }}
     .champion-card .trophy {{
         font-size: 2.6rem;
@@ -377,7 +395,9 @@ st.markdown(
         text-align: center;
         border: 2px solid {STEEL_GREY};
         background: white;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
     }}
+    .battle-card:hover {{ transform: translateY(-3px); box-shadow: 0 10px 22px rgba(14, 15, 20, 0.12); }}
     .battle-card.winner {{ border-color: {LIGHT_SAGE}; background: rgba(164,205,187,0.15); }}
     .battle-card .name {{ font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
         letter-spacing: 0.03em; color: {GREY_600}; }}
@@ -392,6 +412,14 @@ st.markdown(
         border-radius: 999px;
         background: {CARBON_BLACK};
         color: white;
+        display: inline-block;
+        transition: transform 0.15s cubic-bezier(.34,1.56,.64,1), box-shadow 0.15s ease,
+            background 0.15s ease;
+    }}
+    .badge-pill:hover {{
+        transform: scale(1.08) translateY(-1px);
+        box-shadow: 0 6px 14px rgba(14, 15, 20, 0.3);
+        background: {GREY_900};
     }}
 
     .suspense-text {{
@@ -404,6 +432,66 @@ st.markdown(
     </style>
     """,
     unsafe_allow_html=True,
+)
+
+# Native emoji rendering varies a lot by OS/browser (Windows vs Mac vs different Chrome builds
+# render the same character noticeably differently) - jarring on a shared screen at a live event
+# with a mix of devices. Twemoji (Twitter's open-source emoji set, MIT/CC-BY licensed) replaces
+# every emoji character in the rendered page with a consistent flat-style SVG, the same on every
+# device. Loaded from jsdelivr's CDN - already the pattern this page uses for the Inter Google
+# Font import above, so no new class of dependency. Runs via a debounced MutationObserver rather
+# than a one-off pass, since Streamlit re-renders the DOM on every widget interaction (slider
+# drags, reveals, host actions) and each of those can introduce new emoji-bearing text that also
+# needs converting - re-parsing already-converted content is a cheap no-op for twemoji, so the
+# debounce exists purely to avoid firing dozens of times during a rapid burst of DOM changes
+# (e.g. a slider drag), not to guard against incorrect behaviour.
+st.markdown(
+    """
+    <style>
+    img.twemoji-icon {
+        height: 1.15em; width: 1.15em;
+        margin: 0 0.05em 0.1em 0.12em;
+        vertical-align: -0.2em;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+# <script> tags inserted via st.markdown's unsafe_allow_html never execute - Streamlit sets them
+# via innerHTML, and browsers deliberately don't run script tags inserted that way. components.html
+# renders into a real iframe instead, where scripts genuinely execute; the script below reaches
+# back OUT to the actual page via window.parent.document, since twemoji needs to rewrite the real
+# page content, not the empty iframe it's running inside. height=0 keeps the (invisible) iframe
+# from taking up any layout space.
+components.html(
+    """
+    <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js"
+            crossorigin="anonymous"></script>
+    <script>
+    (function() {
+        function parseNow() {
+            if (window.twemoji) {
+                window.twemoji.parse(window.parent.document.body, {
+                    folder: "svg", ext: ".svg", className: "twemoji-icon",
+                });
+            }
+        }
+        var waitForLib = setInterval(function() {
+            if (window.twemoji) {
+                clearInterval(waitForLib);
+                parseNow();
+                var debounceTimer = null;
+                var observer = new MutationObserver(function() {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(parseNow, 200);
+                });
+                observer.observe(window.parent.document.body, {childList: true, subtree: true});
+            }
+        }, 100);
+    })();
+    </script>
+    """,
+    height=0,
 )
 
 GAME_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "game_state"
