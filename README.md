@@ -325,8 +325,20 @@ horizon, pot, spend, and constraints) rather than each picking their own. The "�
 - "🗑️ Clear leaderboard" also moved inside host mode, so a random player can't wipe everyone's
   scores.
 
-**How it works / its one real limitation**: the shared scenario is held in a single in-memory
-Python object (`st.cache_resource`, in `_host_state()`), which every session on the same server
+**Suspense mode - scores stay hidden until the host reveals them.** Submitting a portfolio
+("🔒 Lock in my portfolio") scores it and puts it on the leaderboard right away, but nobody sees
+probability of ruin, the crash-test buttons, comparisons, or the leaderboard's numbers yet - every
+player instead sees a "🤐 Portfolio locked in! Sit tight..." placeholder, and the stats banner and
+leaderboard table only show submission counts, not scores. Only the host can reveal: the same
+Leaderboard section gets a **"🎉 Reveal the winner to everyone"** button (host-only), which flips
+one shared flag. The moment that flag flips, every player's own already-computed result unlocks
+automatically on their next click/rerun - no per-player action needed, and each session gets a
+one-time drumroll + confetti moment the first time it notices the reveal. The host can
+**"🔒 Hide scores again"** to run another round without a full leaderboard clear; clearing the
+leaderboard also re-hides scores automatically for a clean new game.
+
+**How it works / its one real limitation**: the shared scenario (and the reveal flag) is held in
+a single in-memory Python object (`st.cache_resource`, in `_host_state()`), which every session on the same server
 process reads and writes — that's what makes the "publish once, everyone sees it instantly" bit
 work with zero extra setup. This is correct for a normal Streamlit Community Cloud deployment
 (one app = one process), but it means the published scenario **resets to the defaults on every
