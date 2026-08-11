@@ -33,6 +33,7 @@ brand pastel wouldn't have enough contrast to read clearly), not a generic/inven
 from __future__ import annotations
 
 import html
+import random
 import re
 import sys
 import time
@@ -247,6 +248,26 @@ st.markdown(
         box-shadow: 0 4px 14px rgba(14, 15, 20, 0.18);
         animation: popIn 0.4s cubic-bezier(.34,1.56,.64,1);
     }}
+
+    .fun-fact-banner {{
+        border-radius: 14px; padding: 0.75rem 1.1rem; margin-bottom: 1rem;
+        background: {CLOUD_BLUE}; border: 1px solid {STEEL_GREY};
+        font-size: 0.88rem; color: {CARBON_BLACK};
+    }}
+    .fun-fact-banner b {{ font-weight: 700; }}
+
+    .cheat-sheet-row {{
+        padding: 0.5rem 0; border-bottom: 1px solid {STEEL_GREY};
+        font-size: 0.85rem;
+    }}
+    .cheat-sheet-row:last-child {{ border-bottom: none; }}
+    .cheat-sheet-row .cs-head {{
+        display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+        gap: 0.5rem; margin-bottom: 0.15rem;
+    }}
+    .cheat-sheet-row .cs-label {{ font-weight: 600; }}
+    .cheat-sheet-row .cs-risk {{ white-space: nowrap; font-size: 0.8rem; }}
+    .cheat-sheet-row .cs-blurb {{ color: {GREY_700}; }}
 
     .stat-card {{
         border: 1px solid {STEEL_GREY};
@@ -641,6 +662,116 @@ FUND_STORE_MAP: dict[str, list[str] | None] = {
 AVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is not None]
 UNAVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is None]
 
+# Plain-English blurb + simple risk tier for every label a slider can show, across BOTH
+# granularity modes (fund store categories and individual building blocks) - aimed at players
+# who don't work with this stuff day to day. Shown as each slider's "?" tooltip and in the
+# cheat-sheet expander. Risk tiers are a simplified, general steer for this game, not advice.
+ASSET_CLASS_INFO: dict[str, tuple[str, str]] = {
+    # Fund store categories
+    "Commodities": ("Raw materials like oil, gold and crops. Prices swing with global "
+                     "supply/demand and inflation.", "🔴 Higher risk"),
+    "Corporate Bonds": ("Loans to companies that pay you interest. Riskier than government "
+                         "bonds, since companies can default.", "🟡 Medium risk"),
+    "Equity": ("Ownership stakes in companies (shares). Higher long-term growth potential, "
+               "but bigger swings along the way.", "🔴 Higher risk"),
+    "Gilts": ("UK government bonds. Seen as one of the safer UK holdings, but returns are "
+              "modest.", "🟢 Lower risk"),
+    "Index Linked Gilts": ("UK government bonds whose payouts rise with inflation - useful "
+                            "protection when prices are climbing fast.", "🟢 Lower risk"),
+    "Infrastructure": ("Investments in things like toll roads, airports and utilities - "
+                        "steady, essential-service cash flows.", "🟡 Medium risk"),
+    "LDI": ("Liability-Driven Investment - a strategy that matches assets to a pension's "
+            "future payment obligations, rather than tracking a single index.", "🟢 Lower risk"),
+    "Money Markets": ("Cash and short-term deposits. The safest, most stable option, but the "
+                       "lowest long-term growth.", "🟢 Lower risk"),
+    "Multi Asset": ("A ready-blended mix of several asset classes in one fund, aiming for "
+                     "diversification in a single holding.", "🟡 Medium risk"),
+    "Multi Asset Credit": ("A blended mix of different types of corporate/credit debt, aiming "
+                            "to diversify credit risk in one fund.", "🟡 Medium risk"),
+    "Overseas Government Bonds": ("Bonds issued by governments outside the UK - adds "
+                                   "geographic spread to the 'safe' part of a portfolio.", "🟢 Lower risk"),
+    "Private Credit": ("Loans to companies made outside the public bond market, often with "
+                        "higher yields in exchange for being harder to sell quickly.", "🟡 Medium risk"),
+    "Private Equity": ("Ownership stakes in companies not listed on a public stock exchange - "
+                        "high potential returns, but hard to sell quickly.", "🔴 Higher risk"),
+    "Private Markets Multi Asset": ("A blended mix of several private (non-listed) asset "
+                                     "classes in one fund.", "🔴 Higher risk"),
+    "Property": ("Real estate, often via listed property companies - a mix of rental income "
+                 "and price growth.", "🟡 Medium risk"),
+    "Real Assets": ("Physical assets like land, resources and infrastructure - tend to hold "
+                     "value relatively well against inflation.", "🟡 Medium risk"),
+    "Securitised Credit": ("Bundles of loans (like mortgages) packaged into tradeable "
+                            "securities - extra yield in exchange for extra complexity.", "🟡 Medium risk"),
+    # Individual building blocks
+    "Global Equities": ("Shares in large companies across developed markets worldwide.", "🔴 Higher risk"),
+    "EM Equities": ("Shares in companies from emerging economies (e.g. China, India, Brazil) - "
+                     "higher growth potential, higher volatility.", "🔴 Higher risk"),
+    "Global Bonds": ("A broad mix of government and corporate bonds from around the world.", "🟡 Medium risk"),
+    "UK Gilts All Stocks": ("The full range of UK government bonds, short and long-dated "
+                             "combined.", "🟢 Lower risk"),
+    "UK Gilts 15yr+": ("Long-dated UK government bonds - more sensitive to interest rate "
+                        "changes than short-dated gilts.", "🟡 Medium risk"),
+    "UK Index-Linked Gilts": ("UK government bonds that rise with inflation.", "🟢 Lower risk"),
+    "REITs": ("Real Estate Investment Trusts - listed companies that own and manage property, "
+              "paying out rental income.", "🟡 Medium risk"),
+    "Cash": ("Bank deposits and equivalents - the safest holding, but returns rarely beat "
+             "inflation over time.", "🟢 Lower risk"),
+    "UK Gilts <5yr": ("Short-dated UK government bonds - lower interest-rate risk than longer "
+                       "gilts.", "🟢 Lower risk"),
+    "US Treasuries 20yr+": ("Long-dated US government bonds - a very safe issuer, but "
+                             "sensitive to interest rate moves.", "🟡 Medium risk"),
+    "Global Agg Bonds": ("A broad global mix of investment-grade government and corporate "
+                          "bonds.", "🟡 Medium risk"),
+    "Eq Gbl DM Quality Gross": ("Developed-market shares in financially strong 'quality' "
+                                 "companies - a steadier equity style.", "🟡 Medium risk"),
+    "Eq Gbl DM Novum Mgd Vol": ("Developed-market shares managed specifically to reduce "
+                                 "volatility.", "🟡 Medium risk"),
+    "Eq EM Net": ("Emerging market shares, net of fees - similar to EM Equities.", "🔴 Higher risk"),
+    "US HY Corp Bond": ("US 'high yield' corporate bonds - higher interest income for taking "
+                         "on more default risk.", "🔴 Higher risk"),
+    "US ABS": ("US Asset-Backed Securities - bonds backed by pools of loans like auto or "
+               "credit card debt.", "🟡 Medium risk"),
+    "EM Corp Bond": ("Corporate bonds issued by companies in emerging markets - higher yield, "
+                      "higher risk.", "🔴 Higher risk"),
+    "US Prop REITS": ("US-listed Real Estate Investment Trusts.", "🟡 Medium risk"),
+    "Commod": ("Commodities (legacy label) - raw materials like oil, gold and crops.", "🔴 Higher risk"),
+    "Hedge Fund Credit Suisse": ("A hedge fund strategy index - aims for returns less tied to "
+                                  "normal market ups and downs.", "🟡 Medium risk"),
+    "HF Trend": ("A 'trend following' hedge fund strategy - aims to profit from sustained "
+                 "price trends in either direction.", "🟡 Medium risk"),
+    "Eq Gbl DM Value Gross": ("Developed-market shares in 'value' companies - stocks that look "
+                               "cheap relative to fundamentals.", "🔴 Higher risk"),
+    "Eq Gbl DM Min vol Gross": ("Developed-market shares specifically selected to minimise "
+                                 "volatility.", "🟡 Medium risk"),
+}
+
+
+def _asset_help(label: str) -> str | None:
+    info = ASSET_CLASS_INFO.get(label)
+    return f"{info[1]} — {info[0]}" if info else None
+
+
+# General, well-established investing/market-history facts - deliberately kept to safe,
+# verifiable territory rather than obscure figures. One is shown at random per build session
+# (not re-rolled on every slider tweak) as light "did you know" colour while building.
+FUN_FACTS = [
+    "A UK 60/40 stocks/bonds portfolio has historically had noticeably smaller drawdowns than "
+    "an all-equity portfolio — the classic diversification trade-off.",
+    "The dot-com crash (2000-2003) wiped out roughly half the value of global tech-heavy "
+    "indices before markets eventually recovered.",
+    "In the 2008 Global Financial Crisis, global equities fell by around half, peak to trough.",
+    "Cash feels 'safe', but holding too much for too long is its own risk — inflation quietly "
+    "erodes its real value over time.",
+    "Spreading money across asset classes that don't move in lockstep is often called the only "
+    "'free lunch' in investing: it can lower risk without necessarily lowering expected return.",
+    "Government bonds are generally considered safer than shares, but they're not risk-free — "
+    "their prices fall when interest rates rise.",
+    "'Sequence of returns' risk means WHEN you hit a market crash in retirement can matter more "
+    "than the average return over your whole retirement.",
+    "Private equity and private credit often look smoother than public markets — but that's "
+    "partly because they're valued less often, not because they're actually less volatile.",
+]
+
 st.markdown(
     f"<div class='game-hero'>"
     f"<div class='hero-title'><img src='{_logo_data_uri()}' alt='Mobius'><h1>Build Your Own Portfolio</h1></div>"
@@ -825,7 +956,32 @@ team_name = st.text_input("🏷️ Team / player name", key="team_name",
 
 st.markdown("#### 🏗️ Your allocation")
 st.caption("Drag a slider for each asset class you want to hold (they must add up to 100%), and set "
-           "the annual fee you're assuming for each. Leave a slider at 0% to leave it out entirely.")
+           "the annual fee you're assuming for each. Leave a slider at 0% to leave it out entirely. "
+           "New to this? Hover the **?** next to any slider for a plain-English explainer, or check "
+           "the cheat sheet below.")
+
+if "game_fun_fact" not in st.session_state:
+    st.session_state["game_fun_fact"] = random.choice(FUN_FACTS)
+st.markdown(
+    f"<div class='fun-fact-banner'>💡 <b>Did you know?</b> {st.session_state['game_fun_fact']}</div>",
+    unsafe_allow_html=True,
+)
+
+with st.expander("📚 New here? Quick asset class cheat sheet"):
+    st.caption("What each asset class actually is, and roughly how risky it tends to be - "
+               "a simplified steer for this game, not investment advice.")
+    for _cs_label in labels:
+        _cs_info = ASSET_CLASS_INFO.get(_cs_label)
+        if _cs_info:
+            _cs_blurb, _cs_risk = _cs_info
+            st.markdown(
+                "<div class='cheat-sheet-row'>"
+                f"<div class='cs-head'><span class='cs-label'>{_cs_label}</span>"
+                f"<span class='cs-risk'>{_cs_risk}</span></div>"
+                f"<div class='cs-blurb'>{_cs_blurb}</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
 weight_values, fee_values = [], []
 header_l, header_w, header_f = st.columns([2.5, 5.5, 1.5])
@@ -836,7 +992,14 @@ with header_f:
 for label in labels:
     row_l, row_w, row_f = st.columns([2.5, 5.5, 1.5])
     with row_l:
-        st.markdown(f"<div style='padding-top:0.6rem;'>{label}</div>", unsafe_allow_html=True)
+        # st.slider's own help="" tooltip icon gets display:none'd along with the label when
+        # label_visibility="collapsed" (verified in devtools - it's not just visually subtle,
+        # it's fully hidden), so the hint is rendered here instead as a plain HTML title
+        # attribute on a small info glyph next to the row's own label.
+        _hint = _asset_help(label)
+        _hint_html = (f" <span style='opacity:0.5; cursor:help;' title='{html.escape(_hint)}'>ⓘ</span>"
+                      if _hint else "")
+        st.markdown(f"<div style='padding-top:0.6rem;'>{label}{_hint_html}</div>", unsafe_allow_html=True)
     with row_w:
         w = st.slider(label, 0.0, 100.0, 0.0, step=0.5, key=f"w_{granularity}_{label}",
                        label_visibility="collapsed")
