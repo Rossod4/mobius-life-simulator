@@ -263,6 +263,11 @@ st.markdown(
         font-size: 0.88rem; color: {CARBON_BLACK};
     }}
     .fun-fact-banner b {{ font-weight: 700; }}
+    .pulse-icon {{ display: inline-block; animation: pulse 1.6s ease-in-out infinite; }}
+    @keyframes pulse {{
+        0%, 100% {{ opacity: 1; transform: scale(1); }}
+        50% {{ opacity: 0.55; transform: scale(1.15); }}
+    }}
 
     .cheat-sheet-row {{
         padding: 0.5rem 0.6rem; border-bottom: 1px solid {STEEL_GREY};
@@ -960,6 +965,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown("#### 🎮 How to Play")
 _HOWTO_STEPS = [
     # Plain digits, not keycap emoji (1️⃣2️⃣3️⃣...) - the emoji glyph brings its own square/rounded
     # "keycap" chrome that clashes with (and looks dated next to) the clean circular Carbon Black
@@ -978,51 +984,63 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+def _explainer_row(cards: list[tuple[str, str, str]]) -> None:
+    """Same card look as the How to Play row above, reused for the 'how it works' explainer -
+    one visual language for both instead of steps-in-cards next to maths-in-paragraphs."""
+    st.markdown(
+        "<div class='howto-row'>" + "".join(
+            f"<div class='howto-card'><div class='num'>{icon}</div><br>"
+            f"<b>{title}</b><div class='txt'>{desc}</div></div>"
+            for icon, title, desc in cards
+        ) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 with st.expander("❓ How this game works (and how the numbers are calculated)"):
     st.markdown(
-        "**The game, in short**\n\n"
         "Build a mix of asset classes (or ready-made 'fund store' categories) with a weight and "
         "a fee for each, until you hit 100%. Hit reveal and the tool tells you your probability "
         "of ruin - calculated by the exact same engine the Mobius Wealth team uses for real "
-        "clients, not a cut-down game version.\n\n"
-        "**How 'probability of ruin' is actually calculated**\n"
-        "- It takes your exact mix and fee, plus the retirement scenario the host has set - "
-        "starting age, pot size, how many years the money needs to last, and how much is drawn "
-        "out each year.\n"
-        "- It then plays out 2,000 different possible futures for the markets, using REAL "
-        "historical monthly returns for every asset class you picked (back to 1999/2000 where "
-        "available) - not a straight-line '8% a year' assumption.\n"
-        "- Instead of randomly shuffling individual months (which would chop real crashes and "
-        "recoveries into nonsense), it stitches together chunks of real history - a technique "
-        "called a stationary block bootstrap - so genuine runs of good and bad markets stay "
-        "intact within each simulated future.\n"
-        "- In every one of those 2,000 futures, the pot grows or shrinks with the simulated "
-        "returns, minus what's withdrawn each year (adjusted for inflation using real historical "
-        "UK CPI) and minus your portfolio's fee, which is deducted every single year for the "
-        "whole horizon.\n"
-        "- Probability of ruin is simply: out of those 2,000 futures, what share hit £0 before "
-        "the plan was meant to end. Lower is safer.\n\n"
-        "**What actually moves your score**\n"
-        "- *Equities vs bonds vs cash*: growth-focused assets tend to raise your expected return, "
-        "but also widen the SPREAD of outcomes - great in good futures, painful in bad ones.\n"
-        "- *Fees*: even a small-looking fee compounds away real money over 20-30 years, quietly "
-        "dragging your score down even with an identical asset mix.\n"
-        "- *Diversification*: spreading across asset classes that don't all move together can "
-        "lower risk without necessarily giving up return - about as close as investing gets to "
-        "a free lunch.\n"
-        "- *The house rules*: you're capped on both the number of asset classes you can use and "
-        "your overall weighted fee, so the game rewards a genuinely efficient mix rather than "
-        "just piling into whatever happened to return the most historically.\n\n"
-        "**Badges, crash tests and the leaderboard**\n"
-        "- Badges (🎲 Risk Taker, 🛡️ Ultra Safe, 💰 Fee Hawk, etc.) are fun flair based on your "
-        "finished mix - hover any badge to see exactly what earns it.\n"
-        "- 'Would your portfolio have survived...?' re-runs your EXACT portfolio starting from a "
-        "real historical crisis (e.g. the dot-com crash, 2008) using the real sequence of what "
-        "actually happened next - not a fresh random draw - so you can see how it holds up under "
-        "a genuine stress test.\n"
-        "- The leaderboard ranks everyone by probability of ruin, lowest (safest) first - scores "
-        "stay hidden until the host reveals them."
+        "clients, not a cut-down game version."
     )
+
+    st.markdown("##### 🧮 How 'probability of ruin' is actually calculated")
+    _explainer_row([
+        ("🎯", "Real market history", "2,000 simulated retirements, built from REAL historical "
+         "monthly returns for every asset class you picked - not a straight-line '8% a year' guess."),
+        ("🧩", "Chunks, not shuffles", "A 'stationary block bootstrap' stitches together chunks of "
+         "real history, so genuine runs of good and bad markets stay intact instead of being "
+         "scrambled into nonsense."),
+        ("💷", "Fees & inflation, every year", "Your fee is deducted every single year for the "
+         "whole horizon, and spending is adjusted for real historical UK inflation - just like a "
+         "real plan."),
+        ("📉", "Lower = safer", "Probability of ruin is simply the share of those 2,000 futures "
+         "where the pot hits £0 before the plan was meant to end."),
+    ])
+
+    st.markdown("##### 🎛️ What actually moves your score")
+    _explainer_row([
+        ("⚖️", "Equities vs bonds vs cash", "Growth-focused assets raise your expected return, "
+         "but also widen the SPREAD of outcomes - great in good futures, painful in bad ones."),
+        ("💸", "Fees compound too", "Even a small-looking fee quietly drags your score down over "
+         "20-30 years, even with an identical asset mix."),
+        ("🌐", "Diversification", "Spreading across asset classes that don't all move together can "
+         "lower risk without giving up return - about as close as investing gets to a free lunch."),
+        ("📏", "The house rules", "Capped on both the number of asset classes and your overall "
+         "weighted fee - rewards a genuinely efficient mix, not just the highest historical return."),
+    ])
+
+    st.markdown("##### 🏅 Badges, crash tests & the leaderboard")
+    _explainer_row([
+        ("🎖️", "Badges", "Fun flair based on your finished mix (🎲 Risk Taker, 🛡️ Ultra Safe, "
+         "💰 Fee Hawk...) - hover any badge to see exactly what earns it."),
+        ("💥", "Crash tests", "Re-runs your EXACT portfolio starting from a real historical crisis, "
+         "using what actually happened next - not a fresh random draw."),
+        ("🏆", "Leaderboard", "Ranks everyone by probability of ruin, lowest (safest) first - "
+         "scores stay hidden until the host reveals them."),
+    ])
 
 # Shared reveal gate: the host controls a single "revealed" flag on the same singleton used for
 # the shared scenario (_host_state()), so submitting a portfolio computes and stores the score
@@ -1188,17 +1206,54 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
 # everyone just sees how the game works while they wait. st.stop() halts the script right here for
 # this rerun; nothing below it (builder, cheat sheet, submit/reveal, leaderboard) executes.
 if not host_state["updated_at"]:
-    st.markdown(
-        "<div class='fun-fact-banner' style='text-align:center; font-size:0.95rem; "
-        "padding:1.2rem;'>⏳ <b>Waiting for the host to publish today's scenario...</b><br>"
-        "Once they hit '📡 Publish to all groups' above, your portfolio builder unlocks here. "
-        "Use the time to read <b>'How this game works'</b> above if you haven't already, then "
-        "hit the button below to check again.</div>",
-        unsafe_allow_html=True,
-    )
-    if st.button("🔄 Check again", use_container_width=True):
-        st.rerun()
+    if is_host:
+        # No auto-reload for the host's own tab: they're the one filling in the scenario form
+        # above right now, and an unattended reload every few seconds would fight that (and risks
+        # dropping them back to the PIN prompt) for zero benefit - they trigger the unlock
+        # themselves by hitting Publish, they don't need to be nudged to check for it.
+        st.markdown(
+            "<div class='fun-fact-banner' style='text-align:center; font-size:0.95rem; "
+            "padding:1.2rem;'>🛠️ <b>You're in host mode.</b><br>Set the scenario above and hit "
+            "'📡 Publish to all groups' when you're ready - everyone else is sat on this exact "
+            "screen, waiting for you to do that.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div class='fun-fact-banner' style='text-align:center; font-size:0.95rem; "
+            "padding:1.2rem;'><span class='pulse-icon'>⏳</span> <b>Waiting for the host to publish "
+            "today's scenario...</b><br>The second they hit '📡 Publish to all groups' above, this "
+            "page will pop up and unlock your builder automatically. Use the time to read "
+            "<b>'How this game works'</b> above if you haven't already.</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("🔄 Check again now", use_container_width=True):
+            st.rerun()
+        # No server push available here, so a real-feeling "it just appears" moment is faked with a
+        # plain timed reload - components.html() (not st.markdown) because <script> tags inserted
+        # via st.markdown's unsafe_allow_html never execute (browsers ignore <script> set via
+        # innerHTML); this mirrors the Twemoji injection pattern above, reaching out to
+        # window.parent since the script itself runs inside components.html's own invisible
+        # iframe, not the real page.
+        components.html(
+            "<script>setTimeout(function(){ window.parent.location.reload(); }, 6000);</script>",
+            height=0,
+        )
     st.stop()
+
+# Comparing the host's last-published timestamp against what this browser session last saw lets a
+# genuinely fresh publish (not just "still waiting") get its own pop-up moment here, right as the
+# waiting room's auto-reload picks it up - balloons + a toast the very first time a session sees
+# ANY published scenario, a lighter toast-only nudge if the host later republishes a change while
+# this session is already mid-build (still worth flagging, not worth interrupting play for).
+_last_seen_publish = st.session_state.get("_seen_published_at")
+if host_state["updated_at"] != _last_seen_publish:
+    st.session_state["_seen_published_at"] = host_state["updated_at"]
+    if _last_seen_publish is None:
+        st.balloons()
+        st.toast("The host has published the scenario - let's build your portfolio!", icon="📡")
+    else:
+        st.toast("The host just updated the scenario - check the numbers above.", icon="🔄")
 
 granularity = st.radio(
     "🧩 Asset classes",
