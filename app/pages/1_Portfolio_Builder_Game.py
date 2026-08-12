@@ -1183,6 +1183,23 @@ with st.expander("⚙️ Game setup (host controls)", expanded=False):
     sp_amount = host_state["sp_amount"]
     sp_age = host_state["sp_age"]
 
+# Player mode vs host mode: nobody (host included) gets the actual portfolio builder until a
+# scenario has genuinely been published - before that there's nothing real to build against, so
+# everyone just sees how the game works while they wait. st.stop() halts the script right here for
+# this rerun; nothing below it (builder, cheat sheet, submit/reveal, leaderboard) executes.
+if not host_state["updated_at"]:
+    st.markdown(
+        "<div class='fun-fact-banner' style='text-align:center; font-size:0.95rem; "
+        "padding:1.2rem;'>⏳ <b>Waiting for the host to publish today's scenario...</b><br>"
+        "Once they hit '📡 Publish to all groups' above, your portfolio builder unlocks here. "
+        "Use the time to read <b>'How this game works'</b> above if you haven't already, then "
+        "hit the button below to check again.</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("🔄 Check again", use_container_width=True):
+        st.rerun()
+    st.stop()
+
 granularity = st.radio(
     "🧩 Asset classes",
     ["Fund store categories", "Individual building blocks"],
