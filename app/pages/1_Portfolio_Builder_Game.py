@@ -1219,26 +1219,22 @@ if not host_state["updated_at"]:
             unsafe_allow_html=True,
         )
     else:
+        # An earlier version of this screen tried to auto-poll via a timed window.location.reload()
+        # in a components.html() iframe, on the theory that there's no real server-push available
+        # here. In practice that fought Streamlit's own reconnect/rerun cycle badly enough to make
+        # the page reload every couple of seconds instead of the intended six - unusable, and not
+        # worth the risk for a live event. A manual, reliable "Check again" is what actually works;
+        # the pulse-icon animation keeps the screen feeling alive without touching the page itself.
         st.markdown(
             "<div class='fun-fact-banner' style='text-align:center; font-size:0.95rem; "
             "padding:1.2rem;'><span class='pulse-icon'>⏳</span> <b>Waiting for the host to publish "
-            "today's scenario...</b><br>The second they hit '📡 Publish to all groups' above, this "
-            "page will pop up and unlock your builder automatically. Use the time to read "
-            "<b>'How this game works'</b> above if you haven't already.</div>",
+            "today's scenario...</b><br>Once they hit '📡 Publish to all groups' above, hit the "
+            "button below to unlock your builder. Use the time to read <b>'How this game works'</b> "
+            "above if you haven't already.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("🔄 Check again now", use_container_width=True):
+        if st.button("🔄 Check again", type="primary", use_container_width=True):
             st.rerun()
-        # No server push available here, so a real-feeling "it just appears" moment is faked with a
-        # plain timed reload - components.html() (not st.markdown) because <script> tags inserted
-        # via st.markdown's unsafe_allow_html never execute (browsers ignore <script> set via
-        # innerHTML); this mirrors the Twemoji injection pattern above, reaching out to
-        # window.parent since the script itself runs inside components.html's own invisible
-        # iframe, not the real page.
-        components.html(
-            "<script>setTimeout(function(){ window.parent.location.reload(); }, 6000);</script>",
-            height=0,
-        )
     st.stop()
 
 # Comparing the host's last-published timestamp against what this browser session last saw lets a
