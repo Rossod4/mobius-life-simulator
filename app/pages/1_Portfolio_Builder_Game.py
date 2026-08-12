@@ -978,6 +978,52 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+with st.expander("❓ How this game works (and how the numbers are calculated)"):
+    st.markdown(
+        "**The game, in short**\n\n"
+        "Build a mix of asset classes (or ready-made 'fund store' categories) with a weight and "
+        "a fee for each, until you hit 100%. Hit reveal and the tool tells you your probability "
+        "of ruin - calculated by the exact same engine the Mobius Wealth team uses for real "
+        "clients, not a cut-down game version.\n\n"
+        "**How 'probability of ruin' is actually calculated**\n"
+        "- It takes your exact mix and fee, plus the retirement scenario the host has set - "
+        "starting age, pot size, how many years the money needs to last, and how much is drawn "
+        "out each year.\n"
+        "- It then plays out 2,000 different possible futures for the markets, using REAL "
+        "historical monthly returns for every asset class you picked (back to 1999/2000 where "
+        "available) - not a straight-line '8% a year' assumption.\n"
+        "- Instead of randomly shuffling individual months (which would chop real crashes and "
+        "recoveries into nonsense), it stitches together chunks of real history - a technique "
+        "called a stationary block bootstrap - so genuine runs of good and bad markets stay "
+        "intact within each simulated future.\n"
+        "- In every one of those 2,000 futures, the pot grows or shrinks with the simulated "
+        "returns, minus what's withdrawn each year (adjusted for inflation using real historical "
+        "UK CPI) and minus your portfolio's fee, which is deducted every single year for the "
+        "whole horizon.\n"
+        "- Probability of ruin is simply: out of those 2,000 futures, what share hit £0 before "
+        "the plan was meant to end. Lower is safer.\n\n"
+        "**What actually moves your score**\n"
+        "- *Equities vs bonds vs cash*: growth-focused assets tend to raise your expected return, "
+        "but also widen the SPREAD of outcomes - great in good futures, painful in bad ones.\n"
+        "- *Fees*: even a small-looking fee compounds away real money over 20-30 years, quietly "
+        "dragging your score down even with an identical asset mix.\n"
+        "- *Diversification*: spreading across asset classes that don't all move together can "
+        "lower risk without necessarily giving up return - about as close as investing gets to "
+        "a free lunch.\n"
+        "- *The house rules*: you're capped on both the number of asset classes you can use and "
+        "your overall weighted fee, so the game rewards a genuinely efficient mix rather than "
+        "just piling into whatever happened to return the most historically.\n\n"
+        "**Badges, crash tests and the leaderboard**\n"
+        "- Badges (🎲 Risk Taker, 🛡️ Ultra Safe, 💰 Fee Hawk, etc.) are fun flair based on your "
+        "finished mix - hover any badge to see exactly what earns it.\n"
+        "- 'Would your portfolio have survived...?' re-runs your EXACT portfolio starting from a "
+        "real historical crisis (e.g. the dot-com crash, 2008) using the real sequence of what "
+        "actually happened next - not a fresh random draw - so you can see how it holds up under "
+        "a genuine stress test.\n"
+        "- The leaderboard ranks everyone by probability of ruin, lowest (safest) first - scores "
+        "stay hidden until the host reveals them."
+    )
+
 # Shared reveal gate: the host controls a single "revealed" flag on the same singleton used for
 # the shared scenario (_host_state()), so submitting a portfolio computes and stores the score
 # right away but nobody sees probability of ruin, crash tests, or the leaderboard's numbers until
