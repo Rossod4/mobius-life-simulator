@@ -1120,7 +1120,7 @@ with st.sidebar:
         if show_decum:
             chosen = st.multiselect(
                 "Decumulation portfolios", list(PORTFOLIOS.keys()), default=["Four Seasons", "Better"],
-                format_func=display_name,
+                format_func=display_name, key="decum_chosen",
                 help="Drives the Decumulation section (spending from the pot) and the 'Detailed "
                      "analysis' section further down. Pick any registered portfolio here.",
             )
@@ -1290,16 +1290,23 @@ with st.sidebar:
 
         with st.expander("✏️ Edit portfolio holdings & fees"):
             st.caption(
-                "Edit any portfolio's holdings, asset-class mapping or fee directly - every chart and "
-                "statistic below recalculates immediately, no code changes needed. 'Save as new "
-                "default' writes your edit to data/portfolio_holdings.csv so it's still there next time "
-                "the app starts; without saving, edits only last for this session."
+                "Edit any non-Mobius portfolio's holdings, asset-class mapping or fee directly - every "
+                "chart and statistic below recalculates immediately, no code changes needed. 'Save as "
+                "new default' writes your edit to data/portfolio_holdings.csv so it's still there next "
+                "time the app starts; without saving, edits only last for this session. Mobius's own "
+                "constructions (Alternative, Better) are locked here to stop them being changed by "
+                "accident - see the Client tab if you need to sanity-check their own numbers."
             )
             edit_name = st.selectbox("Portfolio to edit", list(PORTFOLIOS.keys()),
                                       format_func=display_name, key="edit_portfolio_name")
+            _edit_locked = portfolio_owner(edit_name) == "Mobius"
+            if _edit_locked:
+                st.info(f"🔒 **{display_name(edit_name)}** is a Mobius construction and can't be edited "
+                        "here. Pick a different portfolio above to edit it.")
             edit_df = portfolio_summary(edit_name)[["Holding", "AssetClass", "Weight", "OCF"]]
             edited_df = st.data_editor(
                 edit_df, num_rows="dynamic", key=f"editor_{edit_name}", use_container_width=True,
+                disabled=_edit_locked,
                 column_config={
                     "AssetClass": st.column_config.SelectboxColumn("Asset class", options=list(AC.keys())),
                     "Weight": st.column_config.NumberColumn("Weight", format="percent", min_value=0.0,
@@ -1308,26 +1315,79 @@ with st.sidebar:
                                                           max_value=0.05, step=0.0001),
                 },
             )
-            edited_df = edited_df.dropna(subset=["Holding", "AssetClass", "Weight", "OCF"])
-            total_w = edited_df["Weight"].sum()
+            if not _edit_locked:
+                edited_df = edited_df.dropna(subset=["Holding", "AssetClass", "Weight", "OCF"])
+                total_w = edited_df["Weight"].sum()
+                st.caption(
+                    f"Total weight: {total_w:.1%}"
+                    + ("" if abs(total_w - 1.0) < 0.01 else " — doesn't sum to 100%, carried through as-is "
+                                                             "(not auto-normalised), same as the source data.")
+                )
+                # Mutates the SAME dict object engine.py imported (from portfolios import PORTFOLIOS) -
+                # so every downstream function that reads PORTFOLIOS[name] picks this up immediately,
+                # with no other code changes needed. Re-applied fresh every rerun from the editor's
+                # current state.
+                PORTFOLIOS[edit_name] = list(
+                    edited_df[["Holding", "AssetClass", "Weight", "OCF"]].itertuples(index=False, name=None)
+                )
+                if st.button(f"💾 Save {display_name(edit_name)} as new default", key=f"save_{edit_name}"):
+                    save_portfolios_to_csv(PORTFOLIOS)
+                    if edit_name not in PORTFOLIO_META:
+                        PORTFOLIO_META[edit_name] = {"DisplayName": edit_name, "Owner": "Competitor",
+                                                      "Provider": edit_name}
+                    save_portfolio_meta_to_csv(PORTFOLIO_META)
+                    st.success(f"Saved - {display_name(edit_name)} is now the default for future sessions too.")
+
+        with st.expander("🗑️ Delete a portfolio"):
             st.caption(
-                f"Total weight: {total_w:.1%}"
-                + ("" if abs(total_w - 1.0) < 0.01 else " — doesn't sum to 100%, carried through as-is "
-                                                         "(not auto-normalised), same as the source data.")
+                "Removes a portfolio entirely - from every chart, PDF export and the sidebar selectors "
+                "above, and (if you also save) the underlying CSV files too. Mobius's own constructions "
+                "(Alternative, Better) are protected and can't be deleted here; anyone else's fund - "
+                "including the built-in Aspen examples - can be removed if you don't need them."
             )
-            # Mutates the SAME dict object engine.py imported (from portfolios import PORTFOLIOS) - so
-            # every downstream function that reads PORTFOLIOS[name] picks this up immediately, with no
-            # other code changes needed. Re-applied fresh every rerun from the editor's current state.
-            PORTFOLIOS[edit_name] = list(
-                edited_df[["Holding", "AssetClass", "Weight", "OCF"]].itertuples(index=False, name=None)
-            )
-            if st.button(f"💾 Save {display_name(edit_name)} as new default", key=f"save_{edit_name}"):
-                save_portfolios_to_csv(PORTFOLIOS)
-                if edit_name not in PORTFOLIO_META:
-                    PORTFOLIO_META[edit_name] = {"DisplayName": edit_name, "Owner": "Competitor",
-                                                  "Provider": edit_name}
-                save_portfolio_meta_to_csv(PORTFOLIO_META)
-                st.success(f"Saved - {display_name(edit_name)} is now the default for future sessions too.")
+            _deletable = [n for n in PORTFOLIOS if portfolio_owner(n) != "Mobius"]
+            if not _deletable:
+                st.caption("Nothing deletable right now - every registered portfolio is Mobius-owned.")
+            else:
+                del_name = st.selectbox("Portfolio to delete", _deletable, format_func=display_name,
+                                         key="delete_portfolio_name")
+                _confirm_delete = st.checkbox(f"Yes, delete {display_name(del_name)}",
+                                               key="confirm_delete_portfolio")
+                _del_col1, _del_col2 = st.columns(2)
+
+                def _do_delete(also_save: bool):
+                    del PORTFOLIOS[del_name]
+                    PORTFOLIO_META.pop(del_name, None)
+                    # Scrub the name from any live sidebar selections too, so the very next rerun
+                    # doesn't hand a now-deleted name back to a widget whose `options` no longer
+                    # includes it (Streamlit raises on exactly that mismatch, for both multiselect
+                    # and selectbox).
+                    for _key in ("accum_chosen", "decum_chosen"):
+                        if _key in st.session_state:
+                            st.session_state[_key] = [n for n in st.session_state[_key] if n != del_name]
+                    for _key in ("edit_portfolio_name", "delete_portfolio_name"):
+                        if st.session_state.get(_key) == del_name:
+                            del st.session_state[_key]
+                    st.session_state["confirm_delete_portfolio"] = False
+                    if also_save:
+                        save_portfolios_to_csv(PORTFOLIOS)
+                        save_portfolio_meta_to_csv(PORTFOLIO_META)
+
+                with _del_col1:
+                    if st.button("🗑️ Delete (this session)", disabled=not _confirm_delete,
+                                 use_container_width=True):
+                        _deleted_display = display_name(del_name)
+                        _do_delete(also_save=False)
+                        st.success(f"Deleted '{_deleted_display}' from this session. Restarting the app "
+                                   "would bring it back, since nothing's been saved yet.")
+                        st.rerun()
+                with _del_col2:
+                    if st.button("💾 Delete + save permanently", disabled=not _confirm_delete,
+                                 use_container_width=True, type="primary"):
+                        _deleted_display = display_name(del_name)
+                        _do_delete(also_save=True)
+                        st.success(f"Deleted '{_deleted_display}' and saved - gone for future sessions too.")
+                        st.rerun()
 
     with tab_advanced:
         st.header("Guardrails")
