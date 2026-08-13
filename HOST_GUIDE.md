@@ -37,11 +37,12 @@ you can find on the day.)*
 
 1. **Set the scenario** (in host mode): starting age, pot, spend, time horizon, and the two
    constraints (max asset classes, max fee). Defaults are reasonable if you don't want to
-   customise. Click **"📡 Publish to all groups"** — every open device picks this up on their
-   next click, no refresh needed on their end.
+   customise. Click **"📡 Publish to all groups"**.
+   Nobody sees the actual portfolio builder until you've done this — before that, everyone's
+   looking at a "how to play" screen with a **"🔄 Check again"** button. Tell them to hit that
+   once you've published; it unlocks their builder right there (with a little balloons moment).
 2. **Tell everyone to build and lock in their portfolio.** Each team/person:
-   - Picks "Fund store categories" or "Individual building blocks" mode
-   - Enters a team name (+ picks a mascot emoji, purely cosmetic)
+   - Enters a team name
    - Drags sliders until they hit 100%, sets fees
    - Clicks **"🔒 Lock in my portfolio"**
    - Their score is calculated immediately but stays **hidden** from them — this is deliberate,
@@ -63,8 +64,7 @@ you can find on the day.)*
   If you're running this with a big group, consider staggering "lock in when you're ready"
   rather than "everyone click now."
 - **Crash-test buttons** (after reveal, "Would your portfolio have survived...?") also take a
-  few seconds each — they run two more simulations (the player's portfolio and Mobius Better)
-  to build that chart.
+  few seconds each — they re-run the player's own portfolio to build that chart.
 - **If someone sees a "Zzzz... this app has gone to sleep" screen**, click the button to wake it
   and wait ~30-60 seconds. This shouldn't happen if you kept it awake beforehand.
 

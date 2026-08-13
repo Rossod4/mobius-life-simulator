@@ -1,9 +1,8 @@
 """
-Smoke tests for the static config dicts in app/pages/1_Portfolio_Builder_Game.py (FUND_STORE_MAP,
-ASSET_CLASS_INFO) - the game's own asset-class list and the hints/cheat-sheet content added
-alongside it. These would be the easiest thing to quietly break while adding a new fund-store
-category or asset class (e.g. adding a FUND_STORE_MAP entry but forgetting its ASSET_CLASS_INFO
-blurb, so a slider's "i" tooltip silently goes missing).
+Smoke tests for the static config dict in app/pages/1_Portfolio_Builder_Game.py (ASSET_CLASS_INFO)
+- the hints/cheat-sheet content shown alongside the game's own asset-class list. This would be the
+easiest thing to quietly break while adding a new asset class (e.g. adding one to portfolios.AC but
+forgetting its ASSET_CLASS_INFO blurb, so a slider's "i" tooltip silently goes missing).
 
 The game file is a Streamlit PAGE script (executes top-level UI code on import, e.g. st.markdown()
 calls that need a real Streamlit runtime) - rather than importing it directly, its config dicts are
@@ -40,29 +39,8 @@ def game_tree():
 
 
 @pytest.fixture(scope="module")
-def fund_store_map(game_tree):
-    return _extract_module_level_dict(game_tree, "FUND_STORE_MAP")
-
-
-@pytest.fixture(scope="module")
 def asset_class_info(game_tree):
     return _extract_module_level_dict(game_tree, "ASSET_CLASS_INFO")
-
-
-def test_fund_store_map_constituents_have_real_return_data(fund_store_map):
-    """A category mapped to a list (not None) claims those underlying labels are playable in the
-    game - each one must actually have a return series behind it (AC, from asset_class_map.csv),
-    or a player's build would crash on reveal."""
-    for category, constituents in fund_store_map.items():
-        if constituents is None:
-            continue
-        for label in constituents:
-            assert label in AC, f"{category!r} maps to {label!r}, which has no entry in asset_class_map.csv"
-
-
-def test_every_fund_store_category_has_a_hint(fund_store_map, asset_class_info):
-    missing = [c for c in fund_store_map if c not in asset_class_info]
-    assert not missing, f"fund-store categories missing an ASSET_CLASS_INFO hint: {missing}"
 
 
 def test_every_individual_building_block_has_a_hint(asset_class_info):

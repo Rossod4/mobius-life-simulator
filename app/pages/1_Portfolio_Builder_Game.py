@@ -2,9 +2,9 @@
 Portfolio Builder Game - a fun, standalone activity built on the SAME simulation engine and
 asset-class data as the main comparison tool (src/engine.py, data/asset_class_returns.csv), so a
 player's constructed portfolio is scored on exactly the same probability-of-ruin metric the main
-app uses - just with the player choosing the allocation and fees themselves, across the Mobius
-fund store's own asset-class sub-categories (or, in the alternate mode, the finer individual
-building blocks), instead of comparing two pre-built portfolios. After revealing, the player can
+app uses - just with the player choosing the allocation and fees themselves, across the individual
+underlying asset-class series, instead of comparing two pre-built portfolios. After revealing, the
+player can
 also click through real historical crises (CRASH_SCENARIOS) to re-test the SAME built portfolio
 starting right as a real crash happened, instead of the full-history average - "would this have
 survived the 2008 crash" as a fun, optional exploration once the headline score is already in.
@@ -50,7 +50,7 @@ import streamlit.components.v1 as components
 
 import tax
 from engine import load_asset_returns, load_cpi, run_simulation, ClientProfile
-from portfolios import AC, PORTFOLIOS, PORTFOLIO_META, DATA_DIR, EQUITY_CLASSES, asset_class_weights, COMPARISON_GROUPS
+from portfolios import AC, PORTFOLIOS, DATA_DIR, EQUITY_CLASSES
 
 st.set_page_config(page_title="Mobius Wealth - Portfolio Builder Game", layout="wide", page_icon="🎮")
 
@@ -395,20 +395,6 @@ st.markdown(
         letter-spacing: 0.05em; opacity: 0.85;
     }}
 
-    .battle-card {{
-        border-radius: 14px;
-        padding: 1rem;
-        text-align: center;
-        border: 2px solid {STEEL_GREY};
-        background: white;
-        transition: transform 0.18s ease, box-shadow 0.18s ease;
-    }}
-    .battle-card:hover {{ transform: translateY(-3px); box-shadow: 0 10px 22px rgba(14, 15, 20, 0.12); }}
-    .battle-card.winner {{ border-color: {LIGHT_SAGE}; background: rgba(164,205,187,0.15); }}
-    .battle-card .name {{ font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.03em; color: {GREY_600}; }}
-    .battle-card .pct {{ font-size: 1.7rem; font-weight: 700; color: {CARBON_BLACK}; }}
-
     .badge-row {{ display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;
         margin: 0.75rem 0 1rem 0; }}
     .badge-pill {{
@@ -535,17 +521,6 @@ def _cached_load_asset_returns(_mtime: float) -> pd.DataFrame:
 _asset_returns_mtime = (DATA_DIR / "asset_class_returns.csv").stat().st_mtime
 asset_df = _cached_load_asset_returns(_asset_returns_mtime)
 cpi = load_cpi(asset_df)
-
-
-@st.cache_data(show_spinner=False)
-def _benchmark_result(name, _asset_df, _cpi, profile):
-    """Cached per (portfolio name, profile) - independent of any player's own allocation, so every
-    team playing with the same host-set client profile shares one cached run instead of
-    re-simulating Better on every single reveal click. Returns the full SimResult (not just
-    prob_ruin) so its simulated paths can feed the fan chart too. Only ever called with "Better" -
-    deliberately not any competitor portfolio, since this is an internal Mobius game."""
-    return run_simulation(name, _asset_df, _cpi, profile, method="stationary_block",
-                           n_sims=2000, seed=42)
 
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
@@ -730,9 +705,9 @@ def _tier(prob_ruin):
 
 
 # Extra construction-style groupings for badges, at the same individual-building-block label
-# level _badges() receives its `weights` in (post FUND_STORE_MAP expansion) - separate from
-# EQUITY_CLASSES (imported from portfolios.py, used across the main app too) since these two
-# groupings are specific to this game's flair tags, not shared model logic.
+# level _badges() receives its `weights` in - separate from EQUITY_CLASSES (imported from
+# portfolios.py, used across the main app too) since these two groupings are specific to this
+# game's flair tags, not shared model logic.
 OVERSEAS_CLASSES = {
     "EM Equities", "Eq EM Net", "EM Corp Bond", "Global Bonds", "Global Agg Bonds",
     "US Treasuries 20yr+", "US HY Corp Bond", "US ABS", "US Prop REITS",
@@ -786,77 +761,17 @@ BADGE_MEANINGS = {
 }
 
 
-# The Mobius fund store's own "Asset Class Sub-category" list (per the platform's filter panel),
-# each mapped to the underlying long-history series in data/asset_class_returns.csv that best
-# represents it - a category mapped to more than one series (e.g. "Equity" -> developed + emerging)
-# has its assigned weight split evenly across its constituents when a player's portfolio is scored.
-# A category mapped to None has NO return series anywhere in this model yet (these are mostly
-# private-market/LDI-style categories the fund store lists but that aren't in the Bloomberg data
-# behind this simulator) - shown in the game as "coming soon" rather than faked with invented
-# numbers, since the whole point of this game is that the probability-of-ruin answer is real.
-FUND_STORE_MAP: dict[str, list[str] | None] = {
-    "Commodities": ["Commodities"],
-    "Corporate Bonds": ["US HY Corp Bond", "EM Corp Bond"],
-    "Equity": ["Global Equities", "EM Equities"],
-    "Gilts": ["UK Gilts All Stocks", "UK Gilts 15yr+", "UK Gilts <5yr"],
-    "Index Linked Gilts": ["UK Index-Linked Gilts"],
-    "Infrastructure": ["Infrastructure"],
-    "LDI": None,
-    "Money Markets": ["Cash"],
-    "Multi Asset": None,
-    "Multi Asset Credit": None,
-    "Overseas Government Bonds": ["Global Bonds", "US Treasuries 20yr+"],
-    "Private Credit": None,
-    "Private Equity": None,
-    "Private Markets Multi Asset": None,
-    "Property": ["REITs", "US Prop REITS"],
-    "Real Assets": None,
-    "Securitised Credit": ["Securitised Credit"],
-}
-AVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is not None]
-UNAVAILABLE_CATEGORIES = [c for c, v in FUND_STORE_MAP.items() if v is None]
-
-# Plain-English blurb + simple risk tier for every label a slider can show, across BOTH
-# granularity modes (fund store categories and individual building blocks) - aimed at players
-# who don't work with this stuff day to day. Shown as each slider's "?" tooltip and in the
-# cheat-sheet expander. Risk tiers are a simplified, general steer for this game, not advice.
+# Plain-English blurb + simple risk tier for every individual building-block label a slider can
+# show, aimed at players who don't work with this stuff day to day. Shown as each slider's "?"
+# tooltip and in the cheat-sheet expander. Risk tiers are a simplified, general steer for this
+# game, not advice.
 ASSET_CLASS_INFO: dict[str, tuple[str, str]] = {
-    # Fund store categories
     "Commodities": ("Raw materials like oil, gold and crops. Prices swing with global "
                      "supply/demand and inflation.", "🔴 Higher risk"),
-    "Corporate Bonds": ("Loans to companies that pay you interest. Riskier than government "
-                         "bonds, since companies can default.", "🟡 Medium risk"),
-    "Equity": ("Ownership stakes in companies (shares). Higher long-term growth potential, "
-               "but bigger swings along the way.", "🔴 Higher risk"),
-    "Gilts": ("UK government bonds. Seen as one of the safer UK holdings, but returns are "
-              "modest.", "🟢 Lower risk"),
-    "Index Linked Gilts": ("UK government bonds whose payouts rise with inflation - useful "
-                            "protection when prices are climbing fast.", "🟢 Lower risk"),
     "Infrastructure": ("Investments in things like toll roads, airports and utilities - "
                         "steady, essential-service cash flows.", "🟡 Medium risk"),
-    "LDI": ("Liability-Driven Investment - a strategy that matches assets to a pension's "
-            "future payment obligations, rather than tracking a single index.", "🟢 Lower risk"),
-    "Money Markets": ("Cash and short-term deposits. The safest, most stable option, but the "
-                       "lowest long-term growth.", "🟢 Lower risk"),
-    "Multi Asset": ("A ready-blended mix of several asset classes in one fund, aiming for "
-                     "diversification in a single holding.", "🟡 Medium risk"),
-    "Multi Asset Credit": ("A blended mix of different types of corporate/credit debt, aiming "
-                            "to diversify credit risk in one fund.", "🟡 Medium risk"),
-    "Overseas Government Bonds": ("Bonds issued by governments outside the UK - adds "
-                                   "geographic spread to the 'safe' part of a portfolio.", "🟢 Lower risk"),
-    "Private Credit": ("Loans to companies made outside the public bond market, often with "
-                        "higher yields in exchange for being harder to sell quickly.", "🟡 Medium risk"),
-    "Private Equity": ("Ownership stakes in companies not listed on a public stock exchange - "
-                        "high potential returns, but hard to sell quickly.", "🔴 Higher risk"),
-    "Private Markets Multi Asset": ("A blended mix of several private (non-listed) asset "
-                                     "classes in one fund.", "🔴 Higher risk"),
-    "Property": ("Real estate, often via listed property companies - a mix of rental income "
-                 "and price growth.", "🟡 Medium risk"),
-    "Real Assets": ("Physical assets like land, resources and infrastructure - tend to hold "
-                     "value relatively well against inflation.", "🟡 Medium risk"),
     "Securitised Credit": ("Bundles of loans (like mortgages) packaged into tradeable "
                             "securities - extra yield in exchange for extra complexity.", "🟡 Medium risk"),
-    # Individual building blocks
     "Global Equities": ("Shares in large companies across developed markets worldwide.", "🔴 Higher risk"),
     "EM Equities": ("Shares in companies from emerging economies (e.g. China, India, Brazil) - "
                      "higher growth potential, higher volatility.", "🔴 Higher risk"),
@@ -970,10 +885,9 @@ _HOWTO_STEPS = [
     # Plain digits, not keycap emoji (1️⃣2️⃣3️⃣...) - the emoji glyph brings its own square/rounded
     # "keycap" chrome that clashes with (and looks dated next to) the clean circular Carbon Black
     # badge .num already styles this with; a bare digit lets that styling actually show through.
-    ("1", "Pick your mode", "Fund store categories (broad) or individual building blocks (finer) - your call."),
-    ("2", "Build your mix", "Assign a weight and a fee to each asset class you want to hold, until you hit 100%."),
-    ("3", "Hit reveal", "Only then do you find out your probability of ruin - no peeking beforehand."),
-    ("4", "Climb the board", "Your score lands on the shared leaderboard below - everyone playing sees it."),
+    ("1", "Build your mix", "Assign a weight and a fee to each asset class you want to hold, until you hit 100%."),
+    ("2", "Hit reveal", "Only then do you find out your probability of ruin - no peeking beforehand."),
+    ("3", "Climb the board", "Your score lands on the shared leaderboard below - everyone playing sees it."),
 ]
 st.markdown(
     "<div class='howto-row'>" + "".join(
@@ -1000,10 +914,9 @@ def _explainer_row(cards: list[tuple[str, str, str]]) -> None:
 
 with st.expander("❓ How this game works (and how the numbers are calculated)"):
     st.markdown(
-        "Build a mix of asset classes (or ready-made 'fund store' categories) with a weight and "
-        "a fee for each, until you hit 100%. Hit reveal and the tool tells you your probability "
-        "of ruin - calculated by the exact same engine the Mobius Wealth team uses for real "
-        "clients, not a cut-down game version."
+        "Build a mix of asset classes with a weight and a fee for each, until you hit 100%. Hit "
+        "reveal and the tool tells you your probability of ruin - calculated by the exact same "
+        "engine the Mobius Wealth team uses for real clients, not a cut-down game version."
     )
 
     st.markdown("##### 🧮 How 'probability of ruin' is actually calculated")
@@ -1251,16 +1164,13 @@ if host_state["updated_at"] != _last_seen_publish:
     else:
         st.toast("The host just updated the scenario - check the numbers above.", icon="🔄")
 
-granularity = st.radio(
-    "🧩 Asset classes",
-    ["Fund store categories", "Individual building blocks"],
-    horizontal=True,
-    help="Fund store categories: the same Asset Class Sub-category list as the Mobius fund store "
-         "platform. Individual building blocks: the finer underlying asset-class series, including "
-         "the specific equity/credit/alternatives strategies used in the Better portfolio.",
-)
-is_fund_store = granularity == "Fund store categories"
-labels = AVAILABLE_CATEGORIES if is_fund_store else list(AC.keys())
+# Fixed rather than a player-facing choice - the game used to also offer a broader "Fund store
+# categories" mode, dropped after event feedback that the individual building blocks (the finer
+# underlying asset-class series) is the one worth everyone's time. Kept as a plain constant
+# (rather than removing it from every session-state key below) purely for namespacing - it's what
+# every game_*/w_*/f_* key is suffixed with, harmless to keep even with only one mode now.
+granularity = "Individual building blocks"
+labels = list(AC.keys())
 result_key = f"game_result_{granularity}"
 
 if st.session_state.get(result_key) is None:
@@ -1340,13 +1250,6 @@ for label in labels:
 
 edited = pd.DataFrame({"Asset class": labels, "Weight %": weight_values, "Fee % pa": fee_values})
 
-if is_fund_store and UNAVAILABLE_CATEGORIES:
-    st.caption(
-        "🚧 Not selectable yet (no return data in the model): " + ", ".join(UNAVAILABLE_CATEGORIES)
-        + " — these are on the fund store's own asset-class list but don't have historical return "
-          "series behind them here, so they're left out rather than guessed at."
-    )
-
 total_weight = float(edited["Weight %"].sum())
 selected_count = int((edited["Weight %"] > 0).sum())
 live_fee_pct = float((edited["Weight %"] * edited["Fee % pa"]).sum() / total_weight) if total_weight > 0 else 0.0
@@ -1419,12 +1322,9 @@ if reveal:
     allocation_str = ", ".join(f"{r['Asset class']} {r['Weight %']:.0f}%" for _, r in rows.iterrows())
     ac_vals, w_vals, fee_vals = [], [], []
     for _, r in rows.iterrows():
-        constituents = FUND_STORE_MAP[r["Asset class"]] if is_fund_store else [r["Asset class"]]
-        share = r["Weight %"] / len(constituents)
-        for ac in constituents:
-            ac_vals.append(ac)
-            w_vals.append(share)
-            fee_vals.append(r["Fee % pa"])
+        ac_vals.append(r["Asset class"])
+        w_vals.append(r["Weight %"])
+        fee_vals.append(r["Fee % pa"])
 
     weights = pd.Series(w_vals, index=ac_vals, dtype=float) / total_weight
     weights = weights.groupby(level=0).sum()  # guards against two rows resolving to the same series
@@ -1657,17 +1557,6 @@ if has_result and revealed:
                 )
                 st.session_state[f"crash_result_{granularity}_{_label}"] = _crash_result.prob_ruin
                 st.session_state[f"crash_paths_{granularity}_{_label}"] = _crash_result.paths
-                # Better's own crash-filtered run for the same growth chart - deliberately NOT
-                # going through the cached _benchmark_result() here, since its cache key
-                # excludes asset_df (see its docstring) and would silently keep returning the
-                # full-history result for every crash scenario if reused here - a bug already
-                # hit and fixed once before for this exact function. A plain uncached call,
-                # stashed in session_state per (mode, crash label), sidesteps that entirely.
-                _crash_better_result = run_simulation(
-                    "Better", _crash_asset_df, cpi, _crash_profile, method="stationary_block",
-                    n_sims=2000, seed=42,
-                )
-                st.session_state[f"crash_better_paths_{granularity}_{_label}"] = _crash_better_result.paths
 
     for _label in _crash_only:
         _crash_key = f"crash_result_{granularity}_{_label}"
@@ -1683,15 +1572,9 @@ if has_result and revealed:
                 unsafe_allow_html=True,
             )
             _crash_paths = st.session_state.get(f"crash_paths_{granularity}_{_label}")
-            _crash_better_paths = st.session_state.get(f"crash_better_paths_{granularity}_{_label}")
             if _crash_paths is not None:
                 _crash_years_axis = np.arange(horizon + 1)
                 _crash_series = [("You", _verdict_color, _crash_paths)]
-                if _crash_better_paths is not None:
-                    _crash_series.append((
-                        PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"),
-                        "#5B8FA8", _crash_better_paths,
-                    ))
                 _crash_fig = go.Figure()
                 for _cs_label, _cs_color, _cs_paths in _crash_series:
                     _cq25, _cq50, _cq75 = (np.percentile(_cs_paths, q, axis=0) for q in (25, 50, 75))
@@ -1749,112 +1632,25 @@ if has_result and revealed:
             unsafe_allow_html=True,
         )
 
-    profile = ClientProfile(starting_age=age, horizon_years=horizon, starting_pot=float(pot),
-                             initial_annual_spend=float(spend), apply_tax=apply_tax,
-                             state_pension_annual=float(sp_amount), state_pension_age=int(sp_age))
-    better_result = _benchmark_result("Better", asset_df, cpi, profile)
-    better_ruin = better_result.prob_ruin
-
-    st.markdown("#### ⚔️ How you compare")
-    st.caption("Benchmarked against Mobius Better - the tool's own most diversified construction, "
-               "not a competitor's fund - as a guide to how well (or badly) you did.")
-    contenders = [
-        ("You", prob_ruin),
-        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), better_ruin),
-    ]
-    best_ruin = min(p for _, p in contenders)
-    bcols = st.columns(2)
-    for col, (label, p) in zip(bcols, contenders):
-        with col:
-            is_winner = p == best_ruin
-            crown = "👑 " if is_winner else ""
-            st.markdown(
-                f"<div class='battle-card{' winner' if is_winner else ''}'>"
-                f"<div class='name'>{crown}{label}</div>"
-                f"<div class='pct'>{p * 100:.1f}%</div></div>",
-                unsafe_allow_html=True,
-            )
-    beat_better = prob_ruin < better_ruin
-    if beat_better:
-        st.success("🎉 You beat Mobius Better - the tool's own most diversified construction. Impressive.")
-    else:
-        st.info("📉 Mobius Better currently beats you - room to improve.")
-
     st.markdown("#### 📊 How your pot could evolve")
-    st.caption("Interactive - hover for exact values, drag to zoom. The bold line is each portfolio's "
-               "median (typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
+    st.caption("Interactive - hover for exact values, drag to zoom. The bold line is the median "
+               "(typical) simulated outcome; the shaded band is the middle 50% of simulated futures.")
     fan = go.Figure()
-    fan_series = [
-        ("You", COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD,
-         st.session_state[f"game_paths_{granularity}"]),
-        # A deepened Cloud Blue for Mobius's own line - the brand's raw Cloud Blue (#B6B7E0) is too
-        # pale to read clearly as a chart line at normal width, so this keeps the same hue family
-        # while giving it enough contrast to actually see.
-        (PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), "#5B8FA8",
-         better_result.paths),
-    ]
+    _fan_color = COLOR_GOOD if prob_ruin < 0.15 else COLOR_WARN if prob_ruin < 0.30 else COLOR_BAD
+    _fan_paths = st.session_state[f"game_paths_{granularity}"]
     years_axis = np.arange(horizon + 1)
-    for label, fan_color, paths in fan_series:
-        q25, q50, q75 = (np.percentile(paths, q, axis=0) for q in (25, 50, 75))
-        fan.add_trace(go.Scatter(x=years_axis, y=q75, line=dict(width=0), showlegend=False, hoverinfo="skip"))
-        fan.add_trace(go.Scatter(x=years_axis, y=q25, fill="tonexty", line=dict(width=0), showlegend=False,
-                                  hoverinfo="skip", fillcolor=_hex_to_rgba(fan_color, 0.18)))
-        fan.add_trace(go.Scatter(x=years_axis, y=q50, mode="lines", name=label,
-                                  line=dict(width=3, color=fan_color)))
+    q25, q50, q75 = (np.percentile(_fan_paths, q, axis=0) for q in (25, 50, 75))
+    fan.add_trace(go.Scatter(x=years_axis, y=q75, line=dict(width=0), showlegend=False, hoverinfo="skip"))
+    fan.add_trace(go.Scatter(x=years_axis, y=q25, fill="tonexty", line=dict(width=0), showlegend=False,
+                              hoverinfo="skip", fillcolor=_hex_to_rgba(_fan_color, 0.18)))
+    fan.add_trace(go.Scatter(x=years_axis, y=q50, mode="lines", name="You",
+                              line=dict(width=3, color=_fan_color)))
     fan.update_layout(
         xaxis_title="Year", yaxis_title="Portfolio value (£)", height=420,
         margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
         legend=dict(orientation="h", y=-0.15),
     )
     st.plotly_chart(fan, use_container_width=True)
-
-    st.markdown("#### 🧩 How diversification made the difference")
-    you_weights = st.session_state[f"game_weights_{granularity}"]
-    better_weights = asset_class_weights("Better")
-
-    def _grouped_weights(w):
-        """Rolls asset-class-level weights up onto the same like-for-like comparison groups the
-        main app uses (portfolios.COMPARISON_GROUPS), so a player's fund-store category picks and
-        Better's own holding-level construction can be compared on equal terms even though they're
-        built from completely different underlying labels."""
-        groups = w.index.map(lambda c: COMPARISON_GROUPS.get(c, c))
-        return w.groupby(groups).sum()
-
-    you_grouped = _grouped_weights(you_weights)
-    better_grouped = _grouped_weights(better_weights)
-    all_groups = sorted(set(you_grouped.index) | set(better_grouped.index),
-                         key=lambda g: -better_grouped.get(g, 0))
-
-    div_fig = go.Figure()
-    div_fig.add_trace(go.Bar(x=all_groups, y=[you_grouped.get(g, 0) * 100 for g in all_groups],
-                              name="You", marker_color=CORAL_RED))
-    div_fig.add_trace(go.Bar(
-        x=all_groups, y=[better_grouped.get(g, 0) * 100 for g in all_groups],
-        name=PORTFOLIO_META.get("Better", {}).get("DisplayName", "Mobius Better"), marker_color="#5B8FA8",
-    ))
-    div_fig.update_layout(
-        barmode="group", yaxis_title="Weight (%)", height=360,
-        margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified",
-        legend=dict(orientation="h", y=-0.3), xaxis_tickangle=-30,
-    )
-    st.plotly_chart(div_fig, use_container_width=True)
-
-    you_class_count = int((you_grouped > 0.001).sum())
-    better_class_count = int((better_grouped > 0.001).sum())
-    if not beat_better:
-        st.info(
-            f"🧩 Mobius Better spreads its 100% across **{better_class_count} asset classes**; you used "
-            f"**{you_class_count}**. That spread is a big part of why it holds up better here - when one "
-            "asset class has a bad run, the others usually aren't all falling at the same time, so the "
-            "pot doesn't take the full hit."
-        )
-    else:
-        st.info(
-            f"🧩 You used **{you_class_count} asset class{'es' if you_class_count != 1 else ''}** against "
-            f"Mobius Better's **{better_class_count}** - and still came out ahead this time. Diversification "
-            "improves your odds across many possible futures; it doesn't guarantee the outcome of any "
-            "single one."
-        )
 
     if st.button("🔁 Build another portfolio"):
         del st.session_state[result_key]

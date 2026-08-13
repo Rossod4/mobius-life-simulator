@@ -84,11 +84,12 @@ Two pages, one Streamlit app, both reading the same `data/` and `src/`:
   holdings/weights/fees are **data-driven** (`data/portfolio_holdings.csv` etc.), editable
   live in the app's sidebar — adding a brand new competitor portfolio needs no code changes.
 - **`app/pages/1_Portfolio_Builder_Game.py`** — a gamified internal version. Players assign
-  weights and fees across the Mobius fund store's own asset-class sub-categories (or finer
-  individual building blocks), hit reveal, and see only their probability of ruin — plus a
-  shared cross-device leaderboard, badges, a benchmark comparison against Mobius Better (only -
-  deliberately no competitor portfolio in an internal game), and an interactive fan chart. Built
-  for a live company-wide activity, not client use.
+  weights and fees across the individual underlying asset-class series, hit reveal, and see only
+  their probability of ruin — plus a shared cross-device leaderboard, badges, historical
+  crash-test buttons, and an interactive fan chart of their own pot's simulated range. Built for
+  a live company-wide activity, not client use. (An earlier version also offered a broader "fund
+  store categories" mode and benchmarked players against Mobius Better; both were dropped after
+  event feedback in favour of just the one, more meaningful mode.)
 
 ## How it fits together
 
@@ -412,14 +413,6 @@ judgement calls, not settled facts.
 
 ## Known gaps / where things were left off
 
-- **7 of the fund store's asset-class sub-categories have no return data at all**: LDI, Multi
-  Asset, Multi Asset Credit, Private Credit, Private Equity, Private Markets Multi Asset, Real
-  Assets. The Portfolio Builder Game shows these as "coming soon" rather than faking numbers
-  for them — see `FUND_STORE_MAP` in `app/pages/1_Portfolio_Builder_Game.py`. Ben (colleague)
-  was asked which specific fund to use as the representative for each fund-store section,
-  including these — **check whether that reply has come in**, then add the return series to
-  `data/asset_class_returns.csv` + a row to `data/asset_class_map.csv`; no other code changes
-  needed once the data exists.
 - **Portfolio Builder Game leaderboard defaults to a CSV file on Streamlit Cloud's ephemeral
   disk** (`game_state/leaderboard.csv`) unless Google Sheets credentials are configured — see
   [Persistent leaderboard setup](#persistent-leaderboard-setup-google-sheets) below. The code
