@@ -347,6 +347,13 @@ horizon, pot, spend, and constraints) rather than each picking their own. The "�
   scenario for everyone mid-session.
 - "🗑️ Clear leaderboard" also moved inside host mode, so a random player can't wipe everyone's
   scores.
+- **Nobody gets the actual portfolio builder until a scenario has been published** — before
+  that, every device (host included) just sees the "how to play" content and a waiting screen.
+  Non-host players get a manual **"🔄 Check again"** button (deliberately no auto-refresh; an
+  earlier attempt at one fought Streamlit's own reconnect cycle badly enough to reload every
+  couple of seconds — see the git history around "Drop the auto-reload"). The host instead sees
+  a "you're in host mode, hit Publish when ready" message, since it's their own tab and they
+  don't need prompting to check for something they control.
 
 **Suspense mode - scores stay hidden until the host reveals them.** Submitting a portfolio
 ("🔒 Lock in my portfolio") scores it and puts it on the leaderboard right away, but nobody sees
@@ -452,11 +459,11 @@ judgement calls, not settled facts.
   bleeding-edge type-hint syntax** — Streamlit appears to touch every page file when building
   the sidebar nav, so a syntax/import error in ANY page can crash the whole app, not just that
   page.
-- **`tests/` covers the core math as a smoke suite, not full coverage.** 31 tests across
+- **`tests/` covers the core math as a smoke suite, not full coverage.** 29 tests across
   `test_engine.py` (simulation shapes/determinism/directional sanity), `test_portfolios.py`
   (every portfolio's weights sum to 1, fees are plausible, every holding maps to real data), and
-  `test_game_config.py` (the game's `FUND_STORE_MAP`/`ASSET_CLASS_INFO` dicts, checked via
-  `ast.literal_eval` rather than importing the Streamlit page directly). Deliberately scoped to
+  `test_game_config.py` (the game's `ASSET_CLASS_INFO` dict, checked via `ast.literal_eval`
+  rather than importing the Streamlit page directly). Deliberately scoped to
   catch a bad data/code edit silently producing wrong probability-of-ruin numbers — not UI
   testing, not full coverage. See [Running the test suite](#running-the-test-suite) below. Every
   module is also independently runnable for a manual self-test (`python src/tax.py` etc.), and
@@ -477,8 +484,6 @@ auto-redeploys within roughly a minute**. No manual deploy step. If the deployed
 
 ## Suggested next steps
 
-- Get Ben's fund picks for the 7 missing asset-class sub-categories and wire them in (see
-  [Known gaps](#known-gaps--where-things-were-left-off)).
 - Confirm the Original-portfolio OCF assumptions against real fund factsheets.
 - Sanity-check / adjust the "Better" portfolio weights with the team.
 - Tax refinements: 25% pension-commencement lump sum, real ISA/GIA wrapper split, let the
