@@ -1,20 +1,29 @@
 # Mobius Wealth — Decumulation & Accumulation Simulator
 
 A Streamlit tool that compares retirement portfolios (Mobius's own fund lineups vs a
-competitor's)on **probability of ruin** — the chance a pension pot runs
-out of money before a client's plan is meant to end — using Monte Carlo simulation over real
-historical market data. Includes a full client-facing comparison app and a gamified internal
-version ("build your own portfolio, see if it survives").
-
-**Live app**: https://mobius-life-simulator-czyadc2asardjl7oiuigmz.streamlit.app
-**Repo**: `hasini08/mobius-life-simulator` on GitHub, `master` branch, auto-deployed via
-Streamlit Community Cloud on every push.
+competitor's) on **probability of ruin** — the chance a pension pot runs out of money before a
+client's plan is meant to end — using Monte Carlo simulation over real historical market data.
+Includes a full client-facing comparison app and a gamified internal version ("build your own
+portfolio, see if it survives").
 
 This README is written for whoever picks this project up next — it covers what everything is,
 how to run it, and where the loose ends are, not just what's "new" in the latest delivery.
-**Running the Portfolio Builder Game live at an event? See [HOST_GUIDE.md](HOST_GUIDE.md)
-instead** — a non-technical, click-by-click guide for whoever's facilitating, separate from this
-developer-facing README.
+
+## At a glance
+
+- **Live app**: https://mobius-life-simulator-czyadc2asardjl7oiuigmz.streamlit.app — nothing to
+  install, just open it. The Portfolio Builder Game is the second page in the sidebar.
+- **Repo**: `hasini08/mobius-life-simulator` on GitHub, `master` branch — any push
+  auto-redeploys the live app within about a minute (see [Deployment](#deployment)).
+- **Running the game live at an event?** Use [HOST_GUIDE.md](HOST_GUIDE.md) instead of this
+  file — a short, non-technical, click-by-click guide for whoever's facilitating.
+- **New to this codebase?** Read [What's actually running](#whats-actually-running) and
+  [How it fits together](#how-it-fits-together) first — everything else in this README is
+  reference material you'll dip into as needed, not something to read start to finish.
+- **Two things to check before relying on this live**, both already flagged in
+  [Known gaps](#known-gaps--where-things-were-left-off): whether the Google Sheets leaderboard
+  backend has actually been set up (it silently falls back to a CSV file that isn't safe under
+  concurrent writes if not), and whether the host PIN has been changed from its default.
 
 ## Contents
 
@@ -55,13 +64,13 @@ pip install -r requirements-dev.txt
 pytest tests/
 ```
 
-31 smoke tests, run in a couple of seconds, no data/secrets setup needed beyond what's already in
+29 smoke tests, run in a couple of seconds, no data/secrets setup needed beyond what's already in
 the repo. They're scoped to catch a bad code/data edit silently producing **wrong** probability-
 of-ruin numbers (a broken portfolio weight, a missing asset-class mapping, a non-deterministic
 seed) — not a UI test suite, and not full coverage. Run this after touching anything in `src/`,
-`data/portfolio_holdings.csv`, `data/asset_class_map.csv`, or the game's `FUND_STORE_MAP`/
-`ASSET_CLASS_INFO` dicts, before pushing — a red test here means a real number is now wrong
-somewhere in the app, not a style nitpick.
+`data/portfolio_holdings.csv`, `data/asset_class_map.csv`, or the game's `ASSET_CLASS_INFO`
+dict, before pushing — a red test here means a real number is now wrong somewhere in the app,
+not a style nitpick.
 
 Requires Python 3.10+ (developed/tested on 3.14; the deployed Cloud runtime's exact version is
 unconfirmed — see the **portability gotcha** in [Known gaps](#known-gaps--where-things-were-left-off)
@@ -208,8 +217,7 @@ main app):**
   weights, fees, asset-class mapping, display names). **Edit these** (by hand or via the app's
   "Edit data" tab) to add/change a portfolio — never hardcode a portfolio in `portfolios.py`.
 - `data/asset_class_returns.csv` — monthly total-return series per broad asset class, the
-  historical data every simulation bootstraps from. See the [portfolio-builder-game section](#known-gaps--where-things-were-left-off)
-  below for which fund-store categories still have no data here.
+  historical data every simulation bootstraps from.
 - `data/fund_returns.csv`, `data/sonia_monthly.csv`, `data/mortality_qx.csv` — supporting
   series (individual fund histories, cash, mortality table).
 - `data/equities/` — UK individual-share data (Weeks 5-8 thread) and RAISE/AQR index data
@@ -269,10 +277,6 @@ existing classes): you need real historical return data for it before it can be 
   c. Optional: add a row to `data/asset_class_comparison_groups.csv` (`AssetClass` →
      `ComparisonGroup`) if you want it rolled up into an existing like-for-like comparison
      bucket rather than standing alone as its own group.
-
-  This is exactly the gap behind the Portfolio Builder Game's 7 "coming soon" fund-store
-  categories (see [Known gaps](#known-gaps--where-things-were-left-off)) — they're waiting on
-  step (a), real return data, before they can be switched on.
 
 ## Persistent leaderboard setup (Google Sheets)
 

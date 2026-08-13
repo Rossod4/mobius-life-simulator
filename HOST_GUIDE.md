@@ -4,6 +4,14 @@ A quick-reference for whoever is hosting the game at the event. No coding knowle
 this is the "what do I actually click, in what order" guide. For anything technical (setup,
 architecture, known issues), see [README.md](README.md) instead.
 
+**What the game actually is, in one paragraph**: each team builds their own retirement portfolio
+— picking a mix of asset classes, weights and fees — then finds out its "probability of ruin":
+the chance, across 2,000 simulated futures built from real historical market data, that their
+pot runs out of money before the plan is meant to end. Lower is better. Everyone plays the same
+scenario (same starting age, pot, spend) so scores are directly comparable, and nobody sees their
+own score until you, the host, reveal it to everyone at once — that's what makes it a game rather
+than just a calculator.
+
 **Game URL**: https://mobius-life-simulator-czyadc2asardjl7oiuigmz.streamlit.app *(Portfolio
 Builder Game is the second page in the sidebar)*
 
