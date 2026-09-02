@@ -812,6 +812,8 @@ ASSET_CLASS_INFO: dict[str, tuple[str, str]] = {
                                "cheap relative to fundamentals.", "🔴 Higher risk"),
     "Eq Gbl DM Min vol Gross": ("Developed-market shares specifically selected to minimise "
                                  "volatility.", "🟡 Medium risk"),
+    "AQR Convexity Fusion": ("AQR's proposed trend following stratergy "
+                                 "- not a live fund.", "🔴 High risk"),
 }
 
 
